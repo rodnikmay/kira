@@ -19,14 +19,72 @@ function dateLabel(iso){ const d=new Date(iso); return ('0'+d.getDate()).slice(-
 const KEY='kira_prep_school_v1';
 const DEF={ name:'Кира', sound:true, diff:'средний', limit:true, restNag:true, speakForeign:false, sparkles:true, voiceName:'',
             voiceRate:0.93,
-            stars:0, grades:[], stickers:[], skills:{}, best:{}, day:null, dayRounds:0,
-            xp:0, streak:0, lastDay:null, daily:{date:'',game:'',done:false} };
+            stars:0, hearts:0, grades:[], stickers:[], medals:[], chestN:0, chestOpens:0,
+            skills:{}, best:{}, day:null, dayRounds:0,
+            xp:0, streak:0, streakGap:0, lastDay:null, daily:{date:'',game:'',done:false},
+            ui:{ theme:'auto', fs:1 } };
 let state = loadState();
 function loadState(){
-  try{ const s=JSON.parse(localStorage.getItem(KEY)||'null'); return Object.assign({},DEF,s||{}); }
-  catch(e){ return Object.assign({},DEF); }
+  try{
+    const s=JSON.parse(localStorage.getItem(KEY)||'null');
+    const st=Object.assign({},DEF,s||{});
+    st.ui=Object.assign({theme:'auto', fs:1}, (s && s.ui) || {});
+    migrate(st);
+    return st;
+  } catch(e){ return Object.assign({},DEF); }
+}
+/* старые сохранения: наклейки были просто значками без «блеска», медалей и сердечек не было */
+function migrate(st){
+  st.stickers=(st.stickers||[]).map(s=> (typeof s==='string') ? {e:s,tier:'common'} : s);
+  st.medals=st.medals||[]; st.hearts=st.hearts||0; st.chestN=st.chestN||0; st.chestOpens=st.chestOpens||0;
+  st.streakGap=st.streakGap||0; st.best=st.best||{}; st.skills=st.skills||{}; st.grades=st.grades||[];
 }
 function save(){ try{ localStorage.setItem(KEY, JSON.stringify(state)); }catch(e){} }
+
+/* ------------------------------ тема и размер текста ------------------------------ */
+/* «auto» повторяет тему устройства, light/dark — выбраны вручную.
+   Размер текста задаётся переменной --fs: весь текст в странице считается от неё. */
+function prefersDark(){ try{ return window.matchMedia('(prefers-color-scheme: dark)').matches; }catch(e){ return false; } }
+function isDark(){ const t=(state.ui && state.ui.theme) || 'auto'; return t==='dark' || (t==='auto' && prefersDark()); }
+function fsVal(){ return Number(state.ui && state.ui.fs) || 1; }
+function fsWord(f){
+  const x=Number(f)||1;
+  if(x<=0.88) return 'мельче';
+  if(x<1.05)  return 'обычный';
+  if(x<1.2)   return 'крупный';
+  return 'очень крупный';
+}
+function applyUI(){
+  document.documentElement.dataset.theme = isDark() ? 'dark' : 'light';
+  document.documentElement.style.setProperty('--fs', String(fsVal()));
+  const bt=$('#btn-theme');
+  if(bt) bt.textContent = isDark() ? '🌙 Тёмная' : '☀️ Светлая';
+  const sl=$('#font-slider'); if(sl) sl.value=String(fsVal());
+  const fv=$('#font-val'); if(fv) fv.textContent=fsWord(fsVal());
+  const sl2=$('#set-font'); if(sl2) sl2.value=String(fsVal());
+  const fv2=$('#font-val2'); if(fv2) fv2.textContent=fsWord(fsVal());
+  const th=$('#set-theme'); if(th) th.value=(state.ui && state.ui.theme) || 'auto';
+}
+function setTheme(t){ state.ui.theme=t; save(); applyUI(); }
+function setFs(v){
+  const x=Number(v); if(!x) return;
+  state.ui.fs=Math.min(1.35, Math.max(0.85, x)); save(); applyUI();
+}
+(function wireUIControls(){
+  const bt=$('#btn-theme');
+  if(bt) bt.addEventListener('click',()=>{ setTheme(isDark() ? 'light' : 'dark'); });
+  const sl=$('#font-slider');
+  if(sl){ sl.addEventListener('input',e=>setFs(e.target.value)); }
+  const th=$('#set-theme');
+  if(th){ th.addEventListener('change',e=>{ setTheme(e.target.value||'auto'); }); }
+  const sl2=$('#set-font');
+  if(sl2){ sl2.addEventListener('input',e=>setFs(e.target.value)); }
+  /* тема устройства поменялась сама — следим за «auto» */
+  try{
+    const mq=window.matchMedia('(prefers-color-scheme: dark)');
+    mq.addEventListener && mq.addEventListener('change',()=>{ if(state.ui.theme==='auto') applyUI(); });
+  }catch(e){}
+})();
 
 /* календарь слов -> картинка */
 const EMOJI_BY_WORD={};
@@ -351,22 +409,43 @@ const conf=$('#confetti'), cctx=conf.getContext('2d');
 let parts=[], confRAF=null;
 function sizeConf(){ conf.width=window.innerWidth; conf.height=window.innerHeight; }
 window.addEventListener('resize', sizeConf); sizeConf();
+function reducedMotion(){ try{ return window.matchMedia('(prefers-reduced-motion: reduce)').matches; }catch(e){ return false; } }
+const CONF_COLORS=['#ff6f91','#ff9ac4','#ffd36e','#ffe066','#2fa84f','#4b8ef1','#7a54d6','#00c2a8','#f97316','#c084fc'];
+const CONF_SHAPES=['rect','rect','circle','star','heart'];
 function confetti(n){
-  const colors=['#ff6f91','#4b8ef1','#ffd36e','#2fa84f','#7a54d6','#00c2a8','#f97316'];
+  if(reducedMotion()) n=Math.min(n, 28);
   const cx=window.innerWidth/2, cy=window.innerHeight*0.34;
   for(let i=0;i<n;i++){
     parts.push({ x:cx+(Math.random()-.5)*window.innerWidth*.7, y:cy+(Math.random()-.5)*80,
       vx:(Math.random()-.5)*8, vy:-7-Math.random()*8, r:5+Math.random()*8,
-      c:colors[rnd(colors.length)], a:Math.random()*Math.PI, spin:(Math.random()-.5)*.35, life:80+Math.random()*60 });
+      c:CONF_COLORS[rnd(CONF_COLORS.length)], shape:CONF_SHAPES[rnd(CONF_SHAPES.length)],
+      a:Math.random()*Math.PI, spin:(Math.random()-.5)*.35, life:80+Math.random()*60 });
   }
   if(!confRAF) tickConf();
+}
+function drawPart(p){
+  const r=p.r;
+  cctx.save(); cctx.translate(p.x,p.y); cctx.rotate(p.a); cctx.fillStyle=p.c;
+  if(p.shape==='circle'){ cctx.beginPath(); cctx.arc(0,0,r*.55,0,Math.PI*2); cctx.fill(); }
+  else if(p.shape==='star'){
+    cctx.beginPath();
+    for(let i=0;i<10;i++){ const rad=(i%2)?r*.42:r*.95, a=i*Math.PI/5; cctx.lineTo(Math.cos(a)*rad, Math.sin(a)*rad); }
+    cctx.closePath(); cctx.fill();
+  } else if(p.shape==='heart'){
+    const s=r*.7;
+    cctx.beginPath(); cctx.moveTo(0,s*.8);
+    cctx.bezierCurveTo(-s*1.2,-s*.2,-s*.5,-s*1.1,0,-s*.4);
+    cctx.bezierCurveTo(s*.5,-s*1.1,s*1.2,-s*.2,0,s*.8);
+    cctx.fill();
+  } else cctx.fillRect(-r/2,-r/2,r,r*.62);
+  cctx.restore();
 }
 function tickConf(){
   confRAF=requestAnimationFrame(tickConf);
   cctx.clearRect(0,0,conf.width,conf.height);
   parts.forEach(p=>{ p.vy+=.2; p.vx*=.995; p.x+=p.vx; p.y+=p.vy; p.a+=p.spin; p.life--; });
   parts=parts.filter(p=>p.life>0 && p.y<conf.height+60);
-  parts.forEach(p=>{ cctx.save(); cctx.translate(p.x,p.y); cctx.rotate(p.a); cctx.fillStyle=p.c; cctx.fillRect(-p.r/2,-p.r/2,p.r,p.r*.62); cctx.restore(); });
+  parts.forEach(drawPart);
   if(!parts.length){ cancelAnimationFrame(confRAF); confRAF=null; cctx.clearRect(0,0,conf.width,conf.height); }
 }
 
@@ -396,18 +475,27 @@ function renderHub(){
   $('#kid-name-top').textContent=state.name;
   $('#kid-name-hero').textContent=state.name;
   const fives=state.grades.filter(g=>g.grade===5).length;
+  const shinies=(state.stickers||[]).filter(s=>s.tier==='rare').length;
+  const legends=(state.stickers||[]).filter(s=>s.tier==='legend').length;
+  const toChest=Math.max(0, 3-(state.chestN||0));
   $('#hero-level').innerHTML =
     '<span class="badge">🎯 Уровень: <b>'+state.diff+'</b></span>'+
     '<span class="badge">🔥 Серия: <b>'+(state.streak||0)+' дн.</b></span>'+
     '<span class="badge">Пятёрок: <b>'+fives+'</b></span>'+
     '<span class="badge">Звёздочек: <b>'+state.stars+'</b></span>'+
-    '<span class="badge">Наклеек: <b>'+state.stickers.length+'</b></span>';
+    '<span class="badge">Сердечек: <b>'+(state.hearts||0)+'</b></span>'+
+    '<span class="badge">Наклеек: <b>'+state.stickers.length+'</b></span>'+
+    '<span class="badge">Медалей: <b>'+(state.medals||[]).length+'</b></span>';
   const bestCount=Object.keys(state.best).length;
   const totalGames=allGames().length;
   $('#hero-summary').innerHTML =
     'Сыграно игр: <b>'+state.grades.length+'</b><br>'+
-    'Игр, где Кира уже получала оценку: <b>'+bestCount+' из '+totalGames+'</b>'+
+    'Игр, где Кира уже получала оценку: <b>'+bestCount+' из '+totalGames+'</b><br>'+
+    'Коллекция наклеек: <b>'+state.stickers.length+'</b> (блестящих ✨ '+shinies+', сказочных 👑 '+legends+')<br>'+
+    (toChest>0 ? ('До сундучка 🎁: ещё <b>'+toChest+'</b> пятёрк'+(toChest===1?'а':(toChest<5?'и':''))+' — он откроется сам')
+               : 'Сундучок 🎁 как раз открылся!')+
     (fives>=3?'<br>Настоящая отличница! 🏆':'<br>Впереди ещё много пятёрок!');
+  medalShelf($('#hero-medals'), true);
 
   paintLevel();
   renderQuick();
@@ -800,7 +888,7 @@ function startGame(sub,g){
   if(restPolicy()==='modal' && !state._extra){ showRest(); return; }
 
   const factory = GEN[g.gen] ? GEN[g.gen]() : null;
-  R={ sub:sub, game:g, kind:g.kind, qs:[], i:0, results:[], stars:0, hints:0, got:null, max:QUESTIONS, finished:false };
+  R={ sub:sub, game:g, kind:g.kind, qs:[], i:0, results:[], stars:0, hints:0, perfect:0, got:null, max:QUESTIONS, finished:false };
   $('#game-title').innerHTML=g.emoji+' '+g.title+' <small class="gt-sub">'+(g.pet?('👣 по методике Л. Г. Петерсон · '+sub.title):sub.title)+'</small>';
   setMood('🙂');
 
@@ -841,7 +929,7 @@ function renderProgress(){
   let html='';
   for(let i=0;i<total;i++){
     let cls='dot';
-    if(i<done) cls+= (R.results[i]===0.5?' half':' done');
+    if(i<done){ const v=R.results[i]; cls += (v===undefined || v===1) ? ' done' : ' half'; }
     html+='<span class="'+cls+'"></span>';
   }
   $('#progress').innerHTML=html;
@@ -865,7 +953,7 @@ function giveHint(){
     $$('#stage .glow').forEach(x=>x.classList.remove('glow'));
     if(R.kind==='choice'){ const el=$$('#stage .opt')[q.answer]; if(el) el.classList.add('glow'); }
     else { const el=$('#stage .bin[data-id="'+ (q.item.cat) +'"]'); if(el) el.classList.add('glow'); }
-    feedback('💡 '+q.hint,'soft');
+    feedback('💡 '+q.hint,'hint');
   } else if(R.kind==='tiles'){
     const q=R.qs[R.i]; if(!q) return; R.hints++; if(R.qs && R.qs[R.i]) R.qs[R.i]._hint=true;
     const need=R.answerGot||0;
@@ -873,7 +961,7 @@ function giveHint(){
     $$('#stage .glow').forEach(x=>x.classList.remove('glow'));
     const el=$$('#stage .tile').filter(t=>!t.classList.contains('used') && t.dataset.v===want)[0];
     if(el) el.classList.add('glow');
-    speak(q.hint); feedback('💡 '+q.hint,'soft');
+    speak(q.hint); feedback('💡 '+q.hint,'hint');
   } else if(R.kind==='trace'){
     R.hints++; if(R.qs && R.qs[R.i]) R.qs[R.i]._hint=true; speak(R.items[R.idx].speak);
     if(R.items[R.idx].kind==='write'){ showTraceGuide(); }
@@ -961,9 +1049,13 @@ function answerSort(bin){
   }
 }
 function scoreQuestion(q){
-  const val=(q._tried||q._hint)?0.5:1;
+  /* Щадящая шкала ответа: с первого раза — 1, после ошибки — 0.85, с подсказкой — 0.75.
+     Звёздочка теперь за каждый верный ответ; если Кира сама исправила ошибку — ей сердечко. */
+  const val = q._hint ? 0.75 : (q._tried ? 0.85 : 1);
   R.results.push(val);
-  if(val===1){ R.stars++; sndStar(); setMood('😍'); sparkleBurst(8); }
+  R.stars++;
+  if(val===1){ R.perfect=(R.perfect||0)+1; sndStar(); setMood('😍'); sparkleBurst(8); }
+  else if(q._tried){ state.hearts=(state.hearts||0)+1; sparkleBurst(4); setMood('🥰'); }
   renderProgress(); renderRoundStars();
   updateHeaderStats();
 }
@@ -1053,7 +1145,7 @@ function startPairs(){
       if(R.deck[a]===R.deck[b]){
         setTimeout(()=>{
           $$('#stage .card')[a].classList.add('matched'); $$('#stage .card')[b].classList.add('matched');
-          R.matched++; sndOk(); R.stars=Math.min(5,n-Math.floor(R.mistakes/2));
+          R.matched++; sndOk(); R.stars=Math.min(5,n-Math.floor(R.mistakes/3));
           renderRoundStars(); renderProgress(); feedback('Пара! '+R.deck[a],'good');
           R.open=[]; R.lock=false;
           if(R.matched===R.total) finishPairs();
@@ -1067,7 +1159,7 @@ function startPairs(){
   };
 }
 function finishPairs(){
-  R.got=Math.max(1, 5 - R.mistakes*0.6);
+  R.got=Math.max(1, 5 - R.mistakes*0.35);
   R.max=5;
   finishRound(true);
 }
@@ -1232,13 +1324,24 @@ function gradeTrace(){
   const cov = T.maskCount? T.coveredCount/T.maskCount : 0;
   const acc = T.drawn? T.onTrack/T.drawn : 0;
   if(T.drawn<10){ feedback('Проведи линию по букве, потом нажми «Готово»','soft'); speak('Проведи по букве, потом нажми готово'); return; }
-  const val = (cov>=0.55 && acc>=0.6)?1 : ((cov>=0.3 || acc>=0.85)?0.5:0);
+  const val = (cov>=0.5 && acc>=0.55)?1 : ((cov>=0.3 || acc>=0.8)?0.6:0);
   const what = (T.it.kind==='grid') ? 'линия' : (T.it.kind==='path' ? 'дорожка' : 'буква');
   const verb = (T.it.kind==='grid'||T.it.kind==='path') ? 'проведи' : 'обведи';
   R.results.push(val);
-  if(val===1){ R.stars++; sndOk(); confetti(30); feedback('Отлично! '+cap(what)+' почти целиком — '+Math.round(cov*100)+'%','good'); say('good', fmt(pick(PRAISE))); }
-  else if(val===0.5){ sndStar(); feedback('Хорошо! Закрыто '+Math.round(cov*100)+'% '+what+'. Попробуй вести линию плотнее.','soft'); speak('Неплохо! Давай ещё раз, старательно.'); }
-  else { sndBad(); feedback('Получилось '+Math.round(cov*100)+'%. '+cap(verb)+' '+what+' ещё разок, старательно.','soft'); speak('Почти! Попробуй '+verb+' '+what+' ещё разок, '+dative(state.name)+'.'); }
+  if(val===1){
+    R.stars++; R.perfect=(R.perfect||0)+1; sndOk(); confetti(30); setMood('😍');
+    feedback('Отлично! '+cap(what)+' почти целиком — '+Math.round(cov*100)+'%','good');
+    say('good', fmt(pick(PRAISE)));
+  } else if(val>=0.6){
+    /* неполная, но старательная линия — тоже звезда и сердечко за старание */
+    R.stars++; state.hearts=(state.hearts||0)+1; sndStar(); sparkleBurst(5); setMood('🥰');
+    feedback('Хорошо! Закрыто '+Math.round(cov*100)+'% '+what+'. Ведите линию чуть плотнее — и будет отлично.','soft');
+    speak('Неплохо! Давай ещё раз, старательно.');
+  } else {
+    tone(523,.16,'sine',.1,0); tone(659,.18,'sine',.09,.13); setMood('🙂');
+    feedback('Получилось '+Math.round(cov*100)+'%. '+cap(verb)+' '+what+' ещё разок — у тебя получится!','soft');
+    speak('Почти! Попробуй '+verb+' '+what+' ещё разок, '+dative(state.name)+'.');
+  }
   renderProgress(); renderRoundStars(); updateHeaderStats();
   stopTrace();
   T=null;
@@ -1285,26 +1388,137 @@ function drawPattern(c,id,W,H,top,bottom,marginX){
   c.stroke();
 }
 
+/* ============================================================
+    Щадящая система наград: наклейки трёх цветов, сердечки,
+    сундучок сюрпризов и полка медалей
+    ============================================================ */
+const TIER_CLS={ common:'', rare:'tier-rare', legend:'tier-legend' };
+const TIER_NAME={ common:'наклейка в дневник 🏅', rare:'блестящая наклейка ✨', legend:'сказочная наклейка 👑' };
+/* Пятёрка — наклейка всегда; четвёрка — часто; тройка — сердечки за старание.
+   «Чистый» круг (без ошибок и подсказок) даёт блестящие и сказочные наклейки. */
+function rollSticker(grade, clean){
+  if(grade===3) return null;
+  if(grade===4 && Math.random()>0.55) return null;
+  const r=Math.random();
+  let tier='common';
+  if(grade===5){
+    if(clean && r<0.28) tier='legend';
+    else if(clean && r<0.65) tier='rare';
+    else if(r<0.3) tier='rare';
+  } else if(r<0.18) tier='rare';
+  return { e:pick(STICKERS), tier:tier };
+}
+
+/* Сундучок открывается сам после каждой третьей пятёрки — всегда с сюрпризом */
+const CHEST=[
+  {e:'🎈', t:'Букет шариков!',           stars:4},
+  {e:'🍭', t:'Сладкий сюрприз!',         stars:3},
+  {e:'🦄', t:'Маленький единорог прискакал!', stars:5},
+  {e:'🌟', t:'Звёздный дождик!',         stars:6},
+  {e:'🌈', t:'Радуга — блестящая наклейка сверху!', stars:2, sticker:'rare'},
+  {e:'🎀', t:'Бантик для Киры!',         stars:2, sticker:'rare'},
+  {e:'👑', t:'Сказочная наклейка!',      stars:4, sticker:'legend'},
+  {e:'🍓', t:'Ягодка за старание!',      stars:3},
+  {e:'🐝', t:'Пчёлка принесла капельку мёда!', stars:3},
+  {e:'💗', t:'Три сердечка за старание!', stars:1, hearts:3}
+];
+function bumpChest(){
+  state.chestN=(state.chestN||0)+1;
+  if(state.chestN<3) return null;
+  state.chestN=0; state.chestOpens=(state.chestOpens||0)+1;
+  const s=pick(CHEST);
+  state.stars += (s.stars||0);
+  if(s.hearts) state.hearts=(state.hearts||0)+s.hearts;
+  if(s.sticker) state.stickers.push({ e:pick(STICKERS), tier:s.sticker });
+  return s;
+}
+
+/* ---------- медали: их нельзя потерять, они остаются навсегда ---------- */
+function n5(s){ return s.grades.filter(g=>g.grade===5).length; }
+function nClean(s){ return s.grades.filter(g=>g.clean).length; }
+function playedSubject(s, sid, min){
+  const title=(SUBJECTS.filter(x=>x.id===sid)[0]||{}).title||'';
+  return s.grades.some(g=>g.grade>=(min||1) && (g.sid===sid || g.subject===title));
+}
+const MEDALS=[
+  {id:'first5',   e:'🌟', t:'Первая пятёрка',        d:'Кира получила первую пятёрку',              tier:'common', ok:s=>n5(s)>=1},
+  {id:'five5',    e:'🏅', t:'Пять пятёрок',          d:'В дневнике 5 пятёрок',                      tier:'common', ok:s=>n5(s)>=5},
+  {id:'ten5',     e:'🥇', t:'Десять пятёрок',        d:'В дневнике 10 пятёрок',                     tier:'rare',   ok:s=>n5(s)>=10},
+  {id:'twenty5',  e:'🏆', t:'Двадцать пятёрок',      d:'В дневнике 20 пятёрок',                     tier:'legend', ok:s=>n5(s)>=20},
+  {id:'clean',    e:'💎', t:'Без единой ошибки',     d:'Круг заданий без ошибок и без подсказок',   tier:'rare',   ok:s=>nClean(s)>=1},
+  {id:'clean5',   e:'👑', t:'Пять чистых кругов',    d:'5 кругов без ошибок',                       tier:'legend', ok:s=>nClean(s)>=5},
+  {id:'streak3',  e:'🔥', t:'Три дня подряд',        d:'Занимается 3 дня подряд',                   tier:'common', ok:s=>(s.streak||0)>=3},
+  {id:'streak7',  e:'🔥', t:'Целая неделя занятий',  d:'Занимается 7 дней подряд',                  tier:'rare',   ok:s=>(s.streak||0)>=7},
+  {id:'stars30',  e:'⭐', t:'30 звёздочек',          d:'В копилке 30 звёздочек',                    tier:'common', ok:s=>s.stars>=30},
+  {id:'stars100', e:'🌠', t:'100 звёздочек',         d:'В копилке 100 звёздочек',                   tier:'rare',   ok:s=>s.stars>=100},
+  {id:'hearts20', e:'💗', t:'20 сердечек',           d:'За старание собрано 20 сердечек',           tier:'common', ok:s=>(s.hearts||0)>=20},
+  {id:'fixer',    e:'🛠', t:'Исправляешь ошибки',    d:'Сама исправила ошибки в 5 кругах',          tier:'common', ok:s=>s.grades.filter(g=>g.grade>=4 && g.hints>0).length>=5},
+  {id:'stickers8',e:'🏆', t:'8 наклеек',             d:'На стене 8 наклеек',                        tier:'common', ok:s=>s.stickers.length>=8},
+  {id:'shiny',    e:'✨', t:'Блестящая наклейка',    d:'В коллекции есть блестящая наклейка',       tier:'rare',   ok:s=>s.stickers.some(x=>x.tier==='rare')},
+  {id:'legend',   e:'🦄', t:'Сказочная наклейка',    d:'В коллекции есть сказочная наклейка',       tier:'legend', ok:s=>s.stickers.some(x=>x.tier==='legend')},
+  {id:'chest',    e:'🎁', t:'Сундучок открыт',       d:'Три пятёрки открыли сундучок',              tier:'common', ok:s=>(s.chestOpens||0)>=1},
+  {id:'chest3',   e:'🎁', t:'Три сундучка',          d:'Открыто 3 сундучка с сюрпризами',           tier:'rare',   ok:s=>(s.chestOpens||0)>=3},
+  {id:'reader',   e:'📖', t:'Читательница',          d:'Чтение: оценка 4 или 5',                    tier:'common', ok:s=>playedSubject(s,'read',4)},
+  {id:'mathgirl', e:'🔢', t:'Математичка',           d:'Математика: оценка 4 или 5',                tier:'common', ok:s=>playedSubject(s,'math',4)},
+  {id:'writer',   e:'✍️', t:'Аккуратные буквы',      d:'Прописи и рука: оценка 4 или 5',            tier:'common', ok:s=>playedSubject(s,'write',4)},
+  {id:'pet',      e:'👣', t:'По ступенькам Петерсон',d:'Игра по методике Петерсон: оценка 4 или 5', tier:'rare',   ok:s=>s.grades.some(g=>g.pet && g.grade>=4)},
+  {id:'sport',    e:'🤸', t:'Зарядка-чемпион',       d:'Сыграны зарядка или гимнастика для глазок', tier:'common', ok:s=>playedSubject(s,'health',3)},
+  {id:'allthemes',e:'🌈', t:'Все темы сыграны',      d:'Кира сыграла во всех разделах',             tier:'legend', ok:s=>SUBJECTS.every(sub=>playedSubject(s,sub.id,1))},
+  {id:'top',      e:'👑', t:'Почти первоклассница',  d:'Достигла верхнего уровня',                  tier:'legend', ok:s=>levelInfo().cur.xp>=LEVELS[LEVELS.length-1].xp}
+];
+function medalById(id){ return MEDALS.filter(m=>m.id===id)[0]; }
+function checkMedals(){
+  const got=[];
+  MEDALS.forEach(m=>{
+    if(state.medals.indexOf(m.id)>=0) return;
+    let ok=false; try{ ok=m.ok(state); }catch(e){ ok=false; }
+    if(ok){ state.medals.push(m.id); got.push(m); }
+  });
+  if(got.length) save();
+  return got;
+}
+function celebrateMedals(list){
+  if(!list.length) return;
+  list.forEach(m=> toast('Новая медаль: '+m.t+' — '+m.d, m.e, 'medal'));
+  confetti(80); sndFanfare(); setMood('🥳');
+  speak('Кира получила новую медаль: '+list[0].t+'! Поздравляем, '+state.name+'!');
+}
+
 /* ------------------------------ итог раунда ------------------------------ */
+/* Щадящая шкала оценки: пятёрка не требует «все пять с первого раза».
+   Двойки нет вообще: тройка — это «старалась, давай повторим». */
+function gradeFromPct(pct){
+  if(pct>=0.85) return 5;
+  if(pct>=0.6)  return 4;
+  return 3;
+}
 function finishRound(preset){
   if(R.finished) return;
   R.finished=true;
   const got = (R.got!==null? R.got : R.results.reduce((a,b)=>a+b,0));
   const max = R.max || QUESTIONS;
   const pct = got/max;
-  const grade = pct>=0.96?5 : (pct>=0.7?4:3);
+  const grade = gradeFromPct(pct);
+  /* «чистый» круг — всё с первого раза и без подсказок: за него блестящие и сказочные наклейки */
+  const clean = R.hints===0 && (R.perfect||0)>=R.results.length && pct>=0.9 && R.results.length>0;
   const record={ d:new Date().toISOString(), subject:R.sub.title, game:R.game.title, grade:grade,
-                 stars:R.stars, hints:R.hints, kind:R.kind };
+                 stars:R.stars, hints:R.hints, kind:R.kind, sid:R.sub.id, pet:!!R.game.pet, clean:clean };
   state.grades.push(record);
   state.stars += R.stars;
   state.stickers = state.stickers||[];
-  let sticker=null;
-  if(grade===5){ sticker=pick(STICKERS); state.stickers.push(sticker); }
+
+  const sticker = rollSticker(grade, clean);
+  if(sticker) state.stickers.push(sticker);
+  const hearts = grade===3 ? 2 : (clean ? 2 : 1);
+  state.hearts=(state.hearts||0)+hearts;
+  const chest = grade===5 ? bumpChest() : null;
+
   const best=state.best[R.game.id];
   if(!best || best.grade<grade || (best.grade===grade && (best.stars||0)<R.stars)) state.best[R.game.id]={grade:grade,stars:R.stars};
   if(state.day!==todayKey()){ state.day=todayKey(); state.dayRounds=0; }
   state.dayRounds++; state._extra=false;
   bumpStreak(); addXp(xpForGrade(grade, R.stars)); checkDaily(grade);
+  const newMedals = checkMedals();
   save(); updateHeaderStats();
 
   /* озвучка и показ */
@@ -1313,21 +1527,40 @@ function finishRound(preset){
   gEl.className='biggrade'+(grade===5?'':(grade===4?' g4':' g3'));
   if(grade===5){
     $('#res-title').textContent = dg+', пятёрка!';
-    $('#res-text').textContent = 'Так держать! Ты справилась'+(R.hints?' почти без подсказок':'')+'. В дневник приклеена наклейка.';
-    sndFanfare(); confetti(150);
+    $('#res-text').textContent = clean
+      ? 'Ни одной ошибки и без подсказок — это настоящая отличница! ✨'
+      : 'Ты справилась'+(R.hints?' и сама всё проверила по подсказке':' и исправила ошибки')+
+        ' — так учатся настоящие ученики. В дневник приклеена наклейка.';
+    sndFanfare(); confetti(clean?200:150); sparkleBurst(clean?18:10); setMood('🤩');
     say('pyaterka', dg+', пятёрка! Умница, '+state.name+'! Так держать!');
   } else if(grade===4){
     $('#res-title').textContent = 'Четвёрка! Молодец, '+state.name+'!';
-    $('#res-text').textContent = 'Хороший результат. Ещё чуть-чуть старания — и будет пятёрка!';
-    confetti(60); tone(659,.2,'sine',.15,0); tone(880,.22,'sine',.13,.15);
+    $('#res-text').textContent = 'Хороший результат: до пятёрки всего один-два верных ответа. Ты уже очень близко!';
+    confetti(70); tone(659,.2,'sine',.15,0); tone(880,.22,'sine',.13,.15); setMood('😃');
     say('four', 'Кира получила четвёрку! Молодец! Ещё чуть-чуть старания, и будет пятёрка.');
   } else {
-    $('#res-title').textContent = 'Тройка. Но Кира старалась!';
-    $('#res-text').textContent = 'Давай повторим это же задание — в следующий раз будет пятёрка. Ошибки — это нормально!';
+    $('#res-title').textContent = 'Тройка — и это уже успех!';
+    $('#res-text').textContent = 'Кира старалась и не бросила задание — за это '+hearts+' сердечка 💗 в копилку. '+
+      'Давай повторим это же: в следующий раз получится больше. Ошибки — это нормально, так учатся все.';
+    tone(523,.18,'sine',.12,0); tone(659,.2,'sine',.11,.14); setMood('😊');
     say('three', 'Тройка, но Кира большая молодец, что старалась. Давай повторим, и будет пятёрка!');
   }
-  $('#res-stars').innerHTML='⭐'.repeat(R.stars);
-  $('#res-sticker').innerHTML=sticker?('Новая наклейка: '+sticker):(grade===5?'':'За пятёрку появляется наклейка 🏅');
+  $('#res-stars').innerHTML = '⭐'.repeat(Math.min(5,R.stars)) + (hearts ? ' ' + '💗'.repeat(hearts) : '');
+  const stEl=$('#res-sticker');
+  stEl.innerHTML = sticker
+    ? '<span class="sticker '+TIER_CLS[sticker.tier]+'">'+sticker.e+'</span><span class="note">'+TIER_NAME[sticker.tier]+'</span>'
+    : '<span class="note">За пятёрку и четвёрку в дневник попадает наклейка 🏅 — ещё чуть-чуть, и она будет!</span>';
+  const chEl=$('#res-chest');
+  if(chest){
+    chEl.classList.remove('hidden');
+    chEl.textContent='🎁 Сундучок открылся: '+chest.t+'  +'+(chest.stars||0)+' ⭐'+(chest.hearts?('  +'+chest.hearts+' 💗'):'');
+    confetti(90); sndFanfare(); toast('Сундучок: '+chest.t, '🎁', 'chest');
+  } else chEl.classList.add('hidden');
+  const mdEl=$('#res-medals');
+  if(newMedals.length){
+    mdEl.innerHTML=newMedals.map(m=>'<span class="medal-mini got'+(m.tier==='legend'?' legend':'')+'" title="'+m.d+'">'+m.e+' '+m.t+'</span>').join('');
+    celebrateMedals(newMedals);
+  } else mdEl.innerHTML='';
   $('#result').classList.remove('hidden');
   R._lastGrade=grade;
 }
@@ -1355,7 +1588,8 @@ function showRest(){
   const fives=state.grades.filter(g=>g.grade===5).length;
   $('#rest-title').textContent=state.name+' сегодня большая молодец!';
   $('#rest-text').textContent='Сыграно игр сегодня: '+state.dayRounds+', пятёрок у Киры уже '+fives+
-    '. Глазкам нужен отдых: попрыгай, попей водички, порисуй. Завтра будет ещё больше пятёрок!';
+    ', сердечек за старание '+(state.hearts||0)+'. Глазкам нужен отдых: попрыгай, попей водички, порисуй. '+
+    'Завтра будет ещё больше пятёрок!';
   $('#rest').classList.remove('hidden');
   say('rest', 'Хватит играть, глазкам нужен отдых. Завтра будет ещё больше пятёрок!');
 }
@@ -1365,7 +1599,39 @@ $('#rest-more').addEventListener('click',()=>{ state._extra=true; $('#rest').cla
 /* ------------------------------ дневник ------------------------------ */
 function updateHeaderStats(){
   $('#stars-count').textContent=state.stars;
+  const h=$('#hearts-count'); if(h) h.textContent=(state.hearts||0);
   $('#sticker-count').textContent=(state.stickers||[]).length;
+}
+/* стена наклеек по цветам «блеска»: обычные, блестящие, сказочные */
+function stickerGroups(){
+  return [['common','Обычные'],['rare','Блестящие ✨'],['legend','Сказочные 👑']].map(pair=>{
+    const tier=pair[0], label=pair[1];
+    const items=(state.stickers||[]).filter(s=>((s && s.tier)||'common')===tier);
+    if(!items.length) return '';
+    return '<div class="sticker-group"><span class="sg-title">'+label+' · '+items.length+'</span>'+
+      items.map(s=>'<span class="sticker '+TIER_CLS[tier]+'">'+s.e+'</span>').join('')+'</div>';
+  }).join('');
+}
+/* полка медалей: в дневнике — все медали (полученные и те, что ещё ждут),
+   на главной — только полученные */
+function medalShelf(el, onlyGot){
+  if(!el) return;
+  const got=state.medals||[];
+  if(onlyGot){
+    el.innerHTML = got.length
+      ? '<span class="hm-label">Медали Киры:</span>'+got.map(id=>{
+          const m=medalById(id); if(!m) return '';
+          return '<span class="medal-mini got'+(m.tier==='legend'?' legend':'')+'" title="'+m.d+'">'+m.e+' '+m.t+'</span>';
+        }).join('')
+      : '<span class="hm-empty">Медали появятся за первые успехи — медаль «Первая пятёрка» уже совсем близко 🌟</span>';
+    return;
+  }
+  el.innerHTML = MEDALS.map(m=>{
+    const has=got.indexOf(m.id)>=0;
+    return '<div class="medal-chip'+(has?' got':'')+(m.tier==='legend'?' legend':'')+'">'+
+      '<span class="m-e">'+(has?m.e:'🔒')+'</span><span class="m-t">'+m.t+'</span>'+
+      '<span>'+m.d+'</span></div>';
+  }).join('');
 }
 function renderDiary(){
   updateHeaderStats();
@@ -1374,25 +1640,32 @@ function renderDiary(){
   const avg = gs.length? (gs.reduce((a,b)=>a+b.grade,0)/gs.length).toFixed(2) : '—';
   $('#diary-stats').innerHTML=
     stat(gs.length,'иг сыграно')+stat(fives,'пятёрок')+stat(fours,'четвёрок')+
-    stat(state.stars,'звёздочек ⭐')+stat((state.stickers||[]).length,'наклеек 🏅')+stat(avg,'средняя оценка');
+    stat(state.stars,'звёздочек ⭐','gold')+stat((state.hearts||0),'сердечек 💗')+
+    stat((state.stickers||[]).length,'наклеек 🏅','mint')+
+    stat((state.medals||[]).length+' из '+MEDALS.length,'медалей 🏆','sky')+
+    stat(avg,'средняя оценка');
+  medalShelf($('#medal-shelf'), false);
   const wall=$('#sticker-wall');
-  if((state.stickers||[]).length){
-    wall.innerHTML=state.stickers.map(s=>'<span class="sticker">'+s+'</span>').join('');
-  } else wall.innerHTML='<span class="sticker-empty">Наклейки появятся, когда Кира получит первую пятёрку.</span>';
+  const groups=stickerGroups();
+  wall.innerHTML = groups ||
+    '<div class="sticker-empty">Наклейки появятся, когда Кира получит первую пятёрку — они бывают обычные, блестящие ✨ и сказочные 👑.</div>';
   const t=$('#diary-table');
   if(!gs.length){ t.innerHTML='<tr><td class="empty-note">Пока пусто. Сыграй в любую игру — и сюда поставят оценку.</td></tr>'; return; }
   const rows=gs.slice().reverse().map(g=>
     '<tr><td>'+dateLabel(g.d)+'</td><td>'+g.subject+'</td><td>'+g.game+'</td>'+
     '<td class="grade g'+g.grade+'">'+g.grade+'</td><td>'+(g.stars?'⭐'.repeat(Math.min(5,g.stars)):'')+'</td>'+
-    '<td>'+(g.hints?('подсказок: '+g.hints):'без подсказок')+'</td></tr>').join('');
+    '<td>'+(g.clean?'без ошибок ✨':(g.hints?('подсказок: '+g.hints):'старалась'))+'</td></tr>').join('');
   t.innerHTML='<tr><th>Дата</th><th>Раздел</th><th>Игра</th><th>Оценка</th><th>Звёзды</th><th>Как старалась</th></tr>'+rows;
 }
-function stat(v,l){ return '<div class="stat"><div class="stat-val">'+v+'</div><div class="stat-lbl">'+l+'</div></div>'; }
+function stat(v,l,cls){
+  return '<div class="stat'+(cls?(' '+cls):'')+'"><div class="stat-val">'+v+'</div><div class="stat-lbl">'+l+'</div></div>';
+}
 $('#btn-print').addEventListener('click',()=>{ renderDiary(); showView('diary'); setTimeout(()=>window.print(),250); });
 $('#btn-clear-diary').addEventListener('click',()=>{
-  if(!confirm('Удалить все оценки и наклейки?')) return;
-  state.grades=[]; state.stickers=[]; state.best={}; state.stars=0;
-  state.xp=0; state.streak=0; state.lastDay=null; state.daily={date:'', game:'', done:false};
+  if(!confirm('Удалить все оценки, наклейки, сердечки и медали? Звёздочки и уровень тоже обнулятся.')) return;
+  state.grades=[]; state.stickers=[]; state.best={}; state.stars=0; state.hearts=0;
+  state.medals=[]; state.chestN=0; state.chestOpens=0;
+  state.xp=0; state.streak=0; state.streakGap=0; state.lastDay=null; state.daily={date:'', game:'', done:false};
   save(); updateHeaderStats(); paintLevel(); renderDiary(); renderHub();
 });
 
@@ -1412,6 +1685,7 @@ function renderAdults(){
   const rl=$('#set-rate'); if(rl) rl.value=Number(state.voiceRate)||0.93;
   const rv=$('#rate-val'); if(rv) rv.textContent=rateWord(state.voiceRate);
   $('#voice-info').textContent=voiceInfoText();
+  applyUI();
   $('#plan-table').innerHTML='<tr><th>День</th><th>Занятие 1</th><th>Занятие 2</th><th>Занятие 3</th></tr>'+
     PLAN.map(r=>'<tr>'+r.map((c,i)=>'<td>'+c+'</td>').join('')+'</tr>').join('');
   $('#book-table').innerHTML='<tr><th>Пособие</th><th>Чему учит</th><th>Игра на сайте</th></tr>'+
@@ -1501,12 +1775,14 @@ $('#btn-voice-test').addEventListener('click',()=>{
   });
 })();
 $('#btn-reset').addEventListener('click',()=>{
-  if(!confirm('Сбросить весь прогресс: оценки, звёздочки, наклейки и галочки умений?')) return;
+  if(!confirm('Сбросить весь прогресс: оценки, звёздочки, наклейки, сердечки, медали и галочки умений?')) return;
   const keep={ name:state.name, sound:state.sound, diff:state.diff, limit:state.limit,
                restNag:state.restNag, speakForeign:state.speakForeign, sparkles:state.sparkles,
-               voiceName:state.voiceName, voiceRate:state.voiceRate };
+               voiceName:state.voiceName, voiceRate:state.voiceRate,
+               ui:Object.assign({}, DEF.ui, state.ui||{}) };
   state=Object.assign({},DEF,keep);
-  save(); updateHeaderStats(); renderAdults(); renderDiary();
+  state.stickers=[]; state.medals=[]; state.grades=[]; state.best={}; state.skills={};
+  save(); applyUI(); updateHeaderStats(); paintLevel(); renderAdults(); renderDiary(); renderHub();
 });
 
 /* ------------------------------ старт ------------------------------ */
@@ -1519,56 +1795,70 @@ function feedback(text,cls){
    ДОПОЛНЕНИЕ: программа Петерсон, новые игры, уровни, блёстки
    ============================================================ */
 
-/* ---------- уровни и опыт ---------- */
+/* ---------- уровни и опыт ----------
+   Уровни наступают чаще и никогда не откатываются назад: опыт только растёт. */
 const LEVELS=[
-  {xp:0,   name:'🌱 Новенькая',           medal:'🌱'},
-  {xp:40,  name:'🌸 Ученица',             medal:'🌸'},
-  {xp:100, name:'💗 Отличница',           medal:'💗'},
-  {xp:180, name:'⭐ Звёздочка',           medal:'⭐'},
-  {xp:300, name:'🦄 Умница-единорог',     medal:'🦄'},
-  {xp:460, name:'👑 Почти первоклассница',medal:'👑'}
+  {xp:0,    name:'🌱 Новенькая',            medal:'🌱'},
+  {xp:25,   name:'🌸 Ученица',              medal:'🌸'},
+  {xp:60,   name:'💗 Хорошая ученица',      medal:'💗'},
+  {xp:110,  name:'⭐ Звёздочка',            medal:'⭐'},
+  {xp:180,  name:'🦄 Умница-единорог',      medal:'🦄'},
+  {xp:260,  name:'🌈 Волшебница',           medal:'🌈'},
+  {xp:360,  name:'👑 Почти первоклассница', medal:'👑'}
 ];
 function levelInfo(){
-  let cur=LEVELS[0], next=null;
-  for(let i=0;i<LEVELS.length;i++){ if(state.xp>=LEVELS[i].xp){ cur=LEVELS[i]; next=LEVELS[i+1]||null; } }
-  return {cur:cur, next:next};
+  let cur=LEVELS[0], next=null, idx=0;
+  for(let i=0;i<LEVELS.length;i++){ if(state.xp>=LEVELS[i].xp){ cur=LEVELS[i]; next=LEVELS[i+1]||null; idx=i; } }
+  return {cur:cur, next:next, idx:idx};
 }
 function yesterdayKey(){ const d=new Date(); d.setDate(d.getDate()-1); return d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate(); }
+function parseDay(k){ const p=String(k).split('-'); return new Date(Number(p[0]), Number(p[1])-1, Number(p[2])); }
+function dayDiff(aKey,bKey){ return Math.round((parseDay(bKey)-parseDay(aKey))/86400000); }
 function paintLevel(){
   const li=levelInfo();
   const nm=$('#level-name'), xpT=$('#level-xp'), fill=$('#xp-fill'), medal=$('#hero-medal');
-  if(nm) nm.textContent=li.cur.name;
+  if(nm) nm.textContent=li.cur.name+' · уровень '+(li.idx+1)+' из '+LEVELS.length;
   if(medal) medal.textContent=li.cur.medal;
   if(li.next){
     const span=li.next.xp-li.cur.xp, done=state.xp-li.cur.xp;
-    if(xpT) xpT.textContent=done+' / '+span+' XP';
-    if(fill) fill.style.width=Math.max(3, Math.min(100, Math.round(done/span*100)))+'%';
-  } else { if(xpT) xpT.textContent='максимум! '+state.xp+' XP'; if(fill) fill.style.width='100%'; }
+    if(xpT) xpT.textContent=done+' / '+span+' XP · до «'+li.next.name+'»';
+    if(fill){ fill.style.width=Math.max(3, Math.min(100, Math.round(done/span*100)))+'%'; fill.classList.remove('full'); }
+  } else {
+    if(xpT) xpT.textContent='Все уровни получены! '+state.xp+' XP';
+    if(fill){ fill.style.width='100%'; fill.classList.add('full'); }
+  }
 }
 function addXp(n, why){
   const before=levelInfo().cur;
   state.xp=(state.xp||0)+n;
   const after=levelInfo().cur;
   if(after.xp>before.xp){
-    confetti(120); sndFanfare();
-    toast('Новый уровень: '+after.name, '🎉');
+    confetti(140); sndFanfare(); sparkleBurst(14);
+    toast('Новый уровень: '+after.name+'! (+'+(after.xp-before.xp)+' XP)', '🎉');
     say('level', 'Кира получила новый уровень: '+after.name.replace(/^\S+\s/,'')+'! Так держать!');
     setMood('🤩');
   }
   paintLevel();
 }
+/* Щадящая серия дней: один день отдыха не сжигает серию, она «замораживается» на 🛡 */
 function bumpStreak(){
   const k=todayKey();
   if(state.lastDay===k) return;
-  state.streak = (state.lastDay===yesterdayKey()) ? (state.streak||0)+1 : 1;
+  if(!state.lastDay){ state.streak=1; state.streakGap=0; }
+  else if(state.lastDay===yesterdayKey()){ state.streak=(state.streak||0)+1; state.streakGap=0; }
+  else if(state.streakGap<1 && dayDiff(state.lastDay,k)<=2){
+    state.streakGap=1;
+    toast('Серия не сгорела: вчера Кира отдыхала 🛡 Серия '+(state.streak||1)+' дн.', '🔥');
+  } else { state.streak=1; state.streakGap=0; }
   state.lastDay=k;
   if(state.streak>=3){ toast('Серия дней: '+state.streak+'! Кира занимается каждый день', '🔥'); }
+  save();
 }
 
 /* ---------- тосты (мелкие приятные сообщения) ---------- */
-function toast(text, emoji){
+function toast(text, emoji, cls){
   const box=$('#toasts'); if(!box) return;
-  const t=document.createElement('div'); t.className='toast';
+  const t=document.createElement('div'); t.className='toast'+(cls?(' '+cls):'');
   t.innerHTML='<span>'+(emoji||'💗')+'</span> '+text;
   box.appendChild(t);
   setTimeout(()=>{ t.classList.add('out'); setTimeout(()=>t.remove(),400); }, 3600);
@@ -1963,14 +2253,16 @@ GEN['logic.memseq']=function(){
 /* ============================================================
    Колесо игр, задание дня, «запомни порядок», диктант по клеточкам
    ============================================================ */
-function xpForGrade(grade, stars){ return stars*2 + (grade===5?8:(grade===4?4:2)); }
+/* Опыт стал щедрее: каждый верный ответ даёт звёздочки, и оценка за старание тоже */
+function xpForGrade(grade, stars){ return stars*2 + (grade===5?10:(grade===4?7:5)); }
 function checkDaily(grade){
   const k=todayKey();
   if(!state.daily || state.daily.date!==k || !R || !R.game) return;
   if(state.daily.game===R.game.id && !state.daily.done){
     state.daily.done=true;
-    state.stars+=3; addXp(6);
-    toast('Задание дня выполнено! Ещё 3 звёздочки сверху', '💗');
+    state.stars+=3; state.hearts=(state.hearts||0)+1; addXp(8);
+    toast('Задание дня выполнено! +3 ⭐ и сердечко 💗 сверху', '💗');
+    confetti(70); sparkleBurst(10);
     save(); updateHeaderStats();
   }
 }
@@ -1988,6 +2280,9 @@ function renderQuick(){
   const box=$('#quick-row'); if(!box) return;
   const dg=dailyGame();
   const done=state.daily && state.daily.date===todayKey() && state.daily.done;
+  const shinies=(state.stickers||[]).filter(s=>s.tier==='rare').length;
+  const legends=(state.stickers||[]).filter(s=>s.tier==='legend').length;
+  const toChest=Math.max(0, 3-(state.chestN||0));
   box.innerHTML=
     '<div class="qcard wheel-card">'+
       '<div class="qcard-emoji wheel-emoji">🎡</div>'+
@@ -2004,15 +2299,26 @@ function renderQuick(){
       '<div class="qcard-body">'+
         '<h3>Задание дня '+(done?'выполнено':'с двойным бонусом')+'</h3>'+
         '<p class="hint-text">'+(done
-            ?'Кира справилась! Завтра розовая ленточка приготовит новую игру. Бонус получен: ⭐⭐⭐'
-            :('Учительница сегодня спрятала в дневнике игру «'+(dg?dg.title:'—')+'». Сыграй в неё — и получишь ещё 3 звёздочки сверху.'))+'</p>'+
+            ?'Кира справилась! Завтра розовая ленточка приготовит новую игру. Бонус получен: ⭐⭐⭐ и 💗'
+            :('Учительница сегодня спрятала в дневнике игру «'+(dg?dg.title:'—')+'». Сыграй в неё — и получишь ещё 3 звёздочки и сердечко сверху.'))+'</p>'+
         '<div class="qcard-btns">'+(done
-            ?'<span class="chip stars">Бонус получен ⭐⭐⭐</span>'
+            ?'<span class="chip stars">Бонус получен ⭐⭐⭐💗'
             :'<button class="btn primary" id="btn-daily">💗 Играть задание дня</button>')+'</div>'+
+      '</div>'+
+    '</div>'+
+    '<div class="qcard collect-card">'+
+      '<div class="qcard-emoji">🏆</div>'+
+      '<div class="qcard-body">'+
+        '<h3>Коллекция Киры</h3>'+
+        '<p class="hint-text">Наклеек: <b>'+state.stickers.length+'</b> — обычных, блестящих ✨ ('+shinies+') и сказочных 👑 ('+legends+'). '+
+        'Медалей: <b>'+(state.medals||[]).length+' из '+MEDALS.length+'</b>. Сердечек за старание: <b>'+(state.hearts||0)+'</b>. '+
+        (toChest>0?('До сундучка 🎁: ещё '+toChest+' пятёрк'+(toChest===1?'а':'и')+'.'):'Сундучок 🎁 готов открыться!')+'</p>'+
+        '<div class="qcard-btns"><button class="btn" id="btn-to-diary">📔 Открыть дневник</button></div>'+
       '</div>'+
     '</div>';
   const bw=$('#btn-wheel'); if(bw) bw.addEventListener('click',()=>{ ac(); spinWheel(); });
   const bd=$('#btn-daily'); if(bd) bd.addEventListener('click',()=>{ ac(); const g=dailyGame(); if(g) startGame(subjectOf(g.id), g); });
+  const btd=$('#btn-to-diary'); if(btd) btd.addEventListener('click',()=>{ ac(); renderDiary(); showView('diary'); });
 }
 function spinWheel(){
   const all=allGames();
@@ -2483,7 +2789,11 @@ GEN['book.measure']=function(){
 };
 
 /* ------------------------------ ЗАПУСК ------------------------------ */
-paintSoundBtn(); updateHeaderStats(); paintLevel(); renderHub();
+applyUI();
+paintSoundBtn(); updateHeaderStats(); paintLevel();
+/* медали за то, что уже достигнуто раньше: тихо, без праздничных сообщений */
+try{ checkMedals(); }catch(e){}
+renderHub();
 document.addEventListener('pointerdown',function once(){
   ac();
   /* на планшете и телефоне голос можно «разбудить» только первым касанием */

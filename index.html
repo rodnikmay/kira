@@ -3,9 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
 <title>Кира готовится к школе — обучающие игры</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8E%92%3C/text%3E%3C/svg%3E">
-<link rel="stylesheet" href="styles.css?v=12">
+<link rel="stylesheet" href="styles.css?v=13">
 </head>
 <body>
 
@@ -17,8 +18,18 @@
   <div class="topbar-right">
     <span class="chip mood" id="mood" title="Настроение Киры">😊</span>
     <span class="chip stars" title="Звёздочки Киры">⭐ <b id="stars-count">0</b></span>
+    <span class="chip hearts" title="Сердечки за старание и за исправленные ошибки">💗 <b id="hearts-count">0</b></span>
     <span class="chip" title="Наклейки за пятёрки">🏅 <b id="sticker-count">0</b></span>
     <button class="chip btn-sound" id="btn-sound" aria-label="Включить или выключить звук">🔊 Звук вкл.</button>
+    <div class="ui-tools">
+      <button class="btn-theme" id="btn-theme" title="Светлая или тёмная тема" aria-label="Менять тему сайта">☀️ Светлая</button>
+      <label class="fs-control" title="Размер текста на сайте">
+        <span class="fs-a small">A</span>
+        <input type="range" id="font-slider" min="0.85" max="1.35" step="0.05" aria-label="Увеличить или уменьшить шрифт">
+        <span class="fs-a big">A</span>
+        <span id="font-val">обычный</span>
+      </label>
+    </div>
     <nav class="tabs">
       <button class="tab active" data-view="hub">🏠 Игры</button>
       <button class="tab" data-view="diary">📔 Дневник</button>
@@ -39,8 +50,8 @@
            звёздочки ⭐ и настоящие <b>пятёрки</b> — их ставит тебе сама учительница.</p>
         <div class="levelbar">
           <div class="levelbar-top">
-            <span id="level-name">🌸 Новенькая</span>
-            <span class="levelbar-xp" id="level-xp">0 / 40 XP</span>
+            <span id="level-name">🌱 Новенькая</span>
+            <span class="levelbar-xp" id="level-xp">0 / 25 XP</span>
           </div>
           <div class="xp-track"><div class="xp-fill" id="xp-fill"></div></div>
           <div class="hero-level" id="hero-level"></div>
@@ -51,6 +62,7 @@
         <div id="hero-summary"></div>
       </div>
     </div>
+    <div class="hero-medals" id="hero-medals"></div>
     <div class="quick-row" id="quick-row"></div>
     <div id="subjects"></div>
   </section>
@@ -82,8 +94,10 @@
       </div>
     </div>
     <div class="diary-stats" id="diary-stats"></div>
-    <h3>Наклейки за пятёрки</h3>
-    <div class="sticker-wall" id="sticker-wall"></div>
+    <h3>Медали Киры</h3>
+    <div class="medal-shelf" id="medal-shelf"></div>
+    <h3>Наклейки: обычные, блестящие и сказочные</h3>
+    <div class="sticker-groups" id="sticker-wall"></div>
     <h3>Оценки</h3>
     <div class="table-wrap"><table class="diary-table" id="diary-table"></table></div>
     <p class="print-note">Дневник распечатывается целиком — его можно повесить на холодильник.</p>
@@ -123,6 +137,18 @@
         <label class="check"><input type="checkbox" id="set-restnag"> Напоминать об отдыхе для глазок: большое окно «глазкам нужен отдых» и голосок после 4 игр. Снимите галочку, если напоминание мешает — тогда окно появляться не будет.</label>
         <label class="check"><input type="checkbox" id="set-foreign"> Озвучивать задания и даже без русского голоса (будет звучать непонятно, но громко)</label>
         <label class="check"><input type="checkbox" id="set-sparkle"> Блёстки и сердечки под курсором (красиво, но чуть активнее)</label>
+        <label class="field">Тема сайта
+          <select id="set-theme">
+            <option value="auto">Авто — как на устройстве (днём светлая, ночью тёмная)</option>
+            <option value="light">Всегда светлая</option>
+            <option value="dark">Всегда тёмная</option>
+          </select>
+        </label>
+        <label class="voice-rate">Размер текста:
+          <input type="range" id="set-font" min="0.85" max="1.35" step="0.05">
+          <span id="font-val2"></span>
+        </label>
+        <div class="hint-text">Ползунок размера текста есть ещё в шапке сайта — Кира может сама сделать буквы крупнее.</div>
         <div class="panel-btns"><button class="btn small" id="btn-voice-test">🔉 Проверить голос: «Кире, пятёрка!»</button></div>
         <div class="hint-text" id="voice-info"></div>
         <div class="clip-block">
@@ -179,10 +205,24 @@
         <h3>💛 Как хвалить, чтобы хотелось учиться</h3>
         <ul class="tips">
           <li>Хвалите за усилие, а не за скорость: «Ты сегодня старалась — это пятёрка!»</li>
-          <li>Ошибка — не двойка. Игра сама скажет: «Почти! Попробуй ещё разок».</li>
-          <li>Подсказка 💡 нужна, но за неё оценка чуть ниже — так честнее.</li>
+          <li>Ошибка — не двойка. Игра сама скажет: «Почти! Посмотри ещё разок», и оценка за исправленную ошибку почти не снижается.</li>
+          <li>Подсказка 💡 можно брать сколько нужно: она чуть-чуть снижает оценку, но пятёрка всё равно достижима.</li>
           <li>Пусть Кира учит игрушки: объясняет задание мишке, а потом играет в «школу» и ставит себе пятёрки.</li>
-          <li>Пятёрку можно «приклеить» в дневник — там появляется стена наклеек.</li>
+          <li>Пятёрку можно «приклеить» в дневник — там появляется стена наклеек и полка медалей.</li>
+          <li>Двойки и «неправильно» нет: тройка — это «старалась, давай повторим», и за старание дают сердечки 💗.</li>
+        </ul>
+      </div>
+
+      <div class="panel panel-wide">
+        <h3>🎁 Как устроены награды (щадящая система)</h3>
+        <ul class="tips">
+          <li><b>Звёздочка ⭐</b> — за каждый верный ответ, даже если сначала получилось не с первого раза.</li>
+          <li><b>Сердечко 💗</b> — за старание: за исправленную ошибку, за любую оценку (за тройку — два), за задание дня. Сердечки никогда не сгорают.</li>
+          <li><b>Оценка</b>: пятёрка ставится, если большинство ответов верны — идеальность не нужна. Двойки нет вообще.</li>
+          <li><b>Наклейки 🏅</b> трёх цветов: обычные (за пятёрку и часто за четвёрку), блестящие ✨ (за пятёрку) и сказочные 👑 (редко — за круг без ошибок и без подсказок).</li>
+          <li><b>Сундучок 🎁</b> открывается сам после каждой третьей пятёрки: внутри сюрприз — звёздочки, сердечки или блестящая/сказочная наклейка.</li>
+          <li><b>Медали 🏆</b> — 24 штуки за разные успехи: первая пятёрка, серия дней, «без единой ошибки», все темы, зарядка, «по ступенькам Петерсон». Они остаются навсегда.</li>
+          <li><b>Уровни</b> теперь наступают быстрее и не откатываются назад; серия дней 🔥 может «замораживаться» на день отдыха, а не сгорать.</li>
         </ul>
       </div>
 
@@ -209,6 +249,8 @@
     <p id="res-text">Отлично! Ты справилась со всеми заданиями.</p>
     <div class="res-stars" id="res-stars"></div>
     <div class="res-sticker" id="res-sticker"></div>
+    <div class="res-chest hidden" id="res-chest"></div>
+    <div class="res-medals" id="res-medals"></div>
     <div class="modal-btns">
       <button class="btn primary" id="res-again">Играть ещё раз</button>
       <button class="btn" id="res-next">Другая игра</button>
@@ -235,13 +277,13 @@
 <div id="sparkles" aria-hidden="true"></div>
 <div id="toasts"></div>
 
-<script src="data.js?v=12"></script>
-<script src="data2.js?v=12"></script>
-<script src="data3.js?v=12"></script>
+<script src="data.js?v=13"></script>
+<script src="data2.js?v=13"></script>
+<script src="data3.js?v=13"></script>
 <!-- данные новых тетрадей: «Игралочка» ч. 3 (5–6 лет) и «Раз — ступенька, два — ступенька» ч. 2 (6–7 лет);
      грузятся до app.js, чтобы главная сразу показывала все игры -->
-<script src="data4.js?v=12"></script>
-<script src="app.js?v=12"></script>
-<script src="gen4.js?v=12"></script>
+<script src="data4.js?v=13"></script>
+<script src="app.js?v=13"></script>
+<script src="gen4.js?v=13"></script>
 </body>
 </html>
