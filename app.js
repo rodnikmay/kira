@@ -471,6 +471,23 @@ function gameOf(id){ let r=null; SUBJECTS.forEach(s=>s.games.forEach(g=>{ if(g.i
 /* фильтр тем в хабe: all | pet (только по Петерсон) | plain (обычные) */
 let hubFilter='all';
 
+/* Как игра устроена — короткая подпись на карточке, чтобы ребёнок
+   сразу понял, что надо делать: выбрать, разложить, собрать, обвести. */
+function kindHint(kind){
+  return ({choice:'🅰️ выбери вариант', sort:'🧺 разложи по корзинкам', tiles:'🔠 собери из кубиков',
+           trace:'✍️ обведи и напиши', pairs:'🃏 найди пары', action:'🤸 зарядка'})[kind] || '🅰️ выбери вариант';
+}
+/* Описание для детской карточки: ссылки на тетради уже в строке 📚 */
+function kidDesc(g){
+  const raw=(g.desc||'').trim();
+  const parts=raw.split('.').map(s=>s.trim()).filter(Boolean);
+  const clean=parts.filter(p=>!/занятие|занятий|занят|страниц|с\. ?\d|по мотивам|продолжение|петерсон|ФОП/i.test(p));
+  let text=clean.join('. ') || raw;
+  if(!text) text=raw;
+  if(text.length>116) text=text.slice(0,116).replace(/[^ ]*$/,'').trim()+'…';
+  return text.endsWith('.')?text:text+'.';
+}
+
 function renderHub(){
   $('#kid-name-top').textContent=state.name;
   $('#kid-name-hero').textContent=state.name;
@@ -531,8 +548,9 @@ function renderHub(){
       card.innerHTML=
         '<span class="g-emoji">'+g.emoji+'</span>'+
         (g.pet?'<span class="g-pet">👣 по Петерсон</span>':'')+
+        '<span class="g-kind">'+kindHint(g.kind)+'</span>'+
         '<span class="g-title">'+g.title+'</span>'+
-        '<span class="g-desc">'+g.desc+'</span>'+
+        '<span class="g-desc">'+kidDesc(g)+'</span>'+
         '<span class="g-book">📚 '+g.book+'</span>'+
         '<span class="g-foot">'+
           '<span class="mini-grade '+(b?('g'+b.grade):'none')+'">'+(b?b.grade:'?')+'</span>'+
@@ -566,7 +584,11 @@ GEN['abc.firstSound']=function(){
   const L=LV().letters, pool=FIRST_SOUND.filter(x=>L.indexOf(x.l)>=0), used={};
   return function(){
     let it,tries=0; do{ it=pick(pool.length?pool:FIRST_SOUND); tries++; }while(used[it.w]&&tries<30); used[it.w]=1;
-    const others=pickN(FIRST_SOUND.filter(x=>x.l!==it.l), LV().opts-1).map(x=>x.l);
+    /* обманки — только из букв текущего уровня, иначе ребёнку предлагают непройденные буквы */
+    const cand=FIRST_SOUND.filter(x=>x.l!==it.l && L.indexOf(x.l)>=0);
+    const back=FIRST_SOUND.filter(x=>x.l!==it.l);
+    const others=(cand.length>=LV().opts-1 ? cand : back).slice()
+      .sort(()=>Math.random()-.5).slice(0, LV().opts-1).map(x=>x.l);
     const opts=shuffle([it.l].concat(others));
     return { speak:'Послушай слово '+it.w+'. Какая буква стоит в слове первой?',
       prompt:'Первая буква в слове:', picture:it.e, pictureWord:cap(it.w),
@@ -579,10 +601,12 @@ GEN['abc.syllables']=function(){
   return function(){
     let it,tries=0; do{ it=pick(SYL_COUNT); tries++; }while(used[it.w]&&tries<30); used[it.w]=1;
     const opts=shuffle([it.n].concat(pickN([1,2,3].filter(n=>n!==it.n),2)));
+    /* делим слово на слоги по гласным — ребёнок хлопает по частям */
+    const parts=it.w.toLowerCase().match(/[^аеёиоуыэюя]*[аеёиоуыэюя][^аеёиоуыэюя]*/g) || [it.w.toLowerCase()];
     return { speak:'Слово '+it.w.toLowerCase()+'. Сколько в нём слогов? Хлопни в ладоши столько раз.',
       prompt:'Сколько слогов в слове:', picture:it.e, pictureWord:cap(it.w),
       options:opts.map(o=>({t:String(o),cls:'text'})), answer:opts.indexOf(it.n),
-      hint:'Повтори слово по частям: '+it.w.toLowerCase()+'. Получилось '+it.n+' слога.' };
+      hint:'Повтори слово по частям и хлопай: '+parts.join(' / ')+'. Получилось '+it.n+' '+((it.n===1)?'слог':(it.n<5?'слога':'слогов'))+'.' };
   };
 };
 GEN['abc.vowels']=function(){
@@ -593,12 +617,13 @@ GEN['abc.vowels']=function(){
     let it;
     if(i<bag.length) it=bag[i++];
     else { i=0; it=shuffle(vow.map(l=>({t:l,cat:'a'})).concat(cons.map(l=>({t:l,cat:'b'}))))[0] || {t:'А',cat:'a'}; }
-    return { speak:'Куда положить букву '+it.t.toLowerCase()+'? В зелёную корзинку — если её можно пропеть, в синюю — если нет.',
-      item:{t:it.t, cat:it.cat, emoji: it.cat==='a'?'🎵':'🧱'},
-      bins:[{id:'a',label:'Гласные · поём',emoji:'🟢'},{id:'b',label:'Согласные · слышим коротко',emoji:'🔵'}],
-      hint: it.cat==='a' ? ('Буква «'+it.t+'» — гласная: её поют свободно, язычок не мешает.'+
-              ('АУИЫЭО'.indexOf(it.t)>=0 ? ' Поём долго: «'+it.t.toLowerCase()+'-а-а».' : ''))
-                         : 'Буква «'+it.t+'» произносится коротко и упирается в язычок — это согласная.' };
+    /* значок предмета нейтральный: 🎵 и 🧱 заранее выдавали, в какую корзинку класть */
+    return { speak:'Куда положить букву '+it.t.toLowerCase()+'? В зелёную корзинку — если букву можно пропеть, в синюю — если пропеть нельзя.',
+      item:{t:it.t, cat:it.cat, emoji:'🅰️'},
+      bins:[{id:'a',label:'Гласные · поём',emoji:'🟢'},{id:'b',label:'Согласные · язычок мешает',emoji:'🔵'}],
+      hint: it.cat==='a' ? ('Букву «'+it.t.toLowerCase()+'» можно пропеть длинно: «'+it.t.toLowerCase()+'-а-а» — она в зелёную корзинку.'+
+              ('АУИЫЭО'.indexOf(it.t)>=0 ? ' Эта буква звенит особенно долго.' : ''))
+                          : 'Букву «'+it.t.toLowerCase()+'» пропеть нельзя — язычок ей мешает. Она в синюю корзинку.' };
   };
 };
 GEN['abc.buildWord']=function(){
@@ -648,18 +673,24 @@ GEN['math.compare']=function(){
     const hard = state.diff==='сложный' || (state.diff==='средний' && Math.random()<.5);
     const em=pick(COUNT_EMOJIS);
     if(hard){
+      /* иногда числа равны — иначе знак «=» никогда не верный и только путает */
+      if(Math.random()<.25) b=a;
+      const sign = a>b ? '>' : (a<b ? '<' : '=');
       const opts=shuffle(['>','<','=']);
-      return { speak:'Сравни числа: '+a+' и '+b+'. Выбери знак: больше, меньше или равно.',
+      return { speak:'Сравни числа '+a+' и '+b+'. Что между ними: больше, меньше или равно?',
+        prompt:'Какой знак нужен между '+a+' и '+b+'?',
         promptHtml:'<div class="op-line">'+a+' &nbsp;?&nbsp; '+b+'</div>',
-        options:opts.map(o=>({t:o,cls:'sign'})), answer:opts.indexOf(a>b?'>':(a<b?'<':'=')),
-        hint:'Там, где больше предметов, открыт ротик к большему числу. '+a+' больше, чем '+b+'.' };
+        options:opts.map(o=>({t:o,cls:'sign'})), answer:opts.indexOf(sign),
+        hint: sign==='=' ? ('Числа одинаковые, значит знак «=»: '+a+' равно '+b+'.')
+                         : ('Ротик открыт к большему числу: '+Math.max(a,b)+' больше, чем '+Math.min(a,b)+' — нужен знак '+sign+'.') };
     }
     const askMore=Math.random()<.5;
     const opts=shuffle([a,b]);
     return { speak:'Посчитай картинки слева и справа: чего '+(askMore?'больше':'меньше')+'?',
       prompt:(askMore?'Где больше? Выбери большее число.':'Где меньше? Выбери меньшее число.'),
       promptHtml:'<div class="cmp"><div><b>'+a+'</b><br>'+em.repeat(a)+'</div><div><b>'+b+'</b><br>'+em.repeat(b)+'</div></div>',
-      options:opts.map(o=>({t:String(o),cls:'text'})), answer:opts.indexOf(askMore?Math.max(a,b):Math.min(a,b)),      hint:'Посчитай: слева '+a+', справа '+b+'. '+(askMore?'Больше':'Меньше')+' — '+ (askMore?Math.max(a,b):Math.min(a,b)) +'.' };
+      options:opts.map(o=>({t:String(o),cls:'text'})), answer:opts.indexOf(askMore?Math.max(a,b):Math.min(a,b)),
+      hint:'Посчитай: слева '+a+', справа '+b+'. '+(askMore?'Больше':'Меньше')+' — '+ (askMore?Math.max(a,b):Math.min(a,b)) +'.' };
   };
 };
 GEN['math.ops']=function(){
@@ -726,7 +757,7 @@ GEN['logic.odd']=function(){
       prompt:'Что лишнее?',
       promptHtml:'<div class="q-count row4">'+it.items.map(x=>'<span>'+x+'</span>').join('')+'</div>',
       options:opts.map(o=>({t:o,cls:'emoji-opt'})), answer:opts.indexOf(it.odd),
-      hint:'Лишнее — '+it.why+'.' };
+      hint:cap(it.why) };
   };
 };
 GEN['logic.pattern']=function(){
@@ -749,7 +780,7 @@ GEN['logic.size']=function(){
     return { speak:cap(it.ask), prompt:it.ask,
       promptHtml:'<div class="cmp big">'+it.items.map(x=>'<div>'+x+'</div>').join('')+'</div>',
       options:opts.map(o=>({t:o,cls:'emoji-opt'})), answer:opts.indexOf(it.ans),
-      hint:it.ans+' крупнее, чем '+it.other+'.' };
+      hint:it.ans+' больше, чем '+it.other+'.' };
   };
 };
 GEN['logic.memory']=function(){ return function(){ return null; }; };
@@ -762,9 +793,11 @@ GEN['world.alive']=function(){
     let it;
     if(i<bag.length) it=bag[i++]; else { i=1; it=bag[0]; }
     return { speak:'Что это: живое или неживое? '+it.t+'. Нажми на нужную корзинку.',
+      prompt:'Это живое или неживое?',
       item:{t:cap(it.t), cat:it.cat, emoji:it.emoji},
-      bins:[{id:'a',label:'Живое · растёт, дышит',emoji:'🌱'},{id:'b',label:'Неживое',emoji:'❄️'}],
-      hint:'Живое растёт, дышит и нуждается в уходе. Это — '+ (it.cat==='a'?'живое':'неживое') +'.' };
+      bins:[{id:'a',label:'Живое · растёт, дышит',emoji:'🌱'},{id:'b',label:'Неживое · не растёт',emoji:'❄️'}],
+      hint: it.cat==='a' ? (cap(it.t)+' живёт: растёт, дышит, нуждается в уходе — в зелёную корзинку.')
+                         : (cap(it.t)+' не живое: оно не растёт и не дышит — в синюю корзинку.') };
   };
 };
 GEN['world.homes']=function(){
@@ -852,7 +885,7 @@ GEN['read.syllables']=function(){
     return { speak:'Собери слово из слогов: '+it.w+'.',
       prompt:'Собери слово из слогов', picture:it.e, pictureWord:'',
       answer:it.syl.slice(), tiles:shuffle(it.syl.slice()),
-      hint:'Первый слог — «'+it.syl[0]+'». В слове '+it.syl.length+' слога.' };
+      hint:'Первый слог — «'+it.syl[0]+'». В слове '+it.syl.length+' '+((it.syl.length===1)?'слог':(it.syl.length<5?'слога':'слогов'))+'.' };
   };
 };
 
@@ -971,30 +1004,46 @@ function giveHint(){
 }
 
 /* ---------- обычный выбор ---------- */
+/* Рамка задания: заголовок-подсказка, вопрос, картинка-стимул, варианты.
+   Так ребёнку сразу видно, что надо сделать, а не только кнопки. */
+function qKicker(chip, extra){
+  return '<div class="q-kicker"><span class="kq">'+chip+'</span>'+
+         (extra?'<span class="kq kq-soft">'+extra+'</span>':'')+'</div>';
+}
+function qStim(inner){
+  return inner ? '<div class="q-stim">'+inner+'</div>' : '';
+}
+function optionsHtml(q){
+  if(!q.options) return '';
+  return '<div class="options">'+q.options.map((o,i)=>
+    '<button class="opt '+(o.cls||'')+'" data-i="'+i+'">'+(o.html!==undefined?o.html:o.t)+
+    (o.label?'<span class="opt-label">'+o.label+'</span>':'')+
+    '<span class="opt-tap">нажми</span></button>').join('')+'</div>';
+}
 function nextQuestion(){
   R.i = R.results.length;
   if(R.i>=R.qs.length){ finishRound(); return; }
   const q=R.qs[R.i]; q._tried=false; q._hint=false;
-  let html='';
-  if(q.picture) html+='<div class="q-picture">'+q.picture+(q.pictureWord?'<div class="q-pw">'+q.pictureWord+'</div>':'')+'</div>';
-  if(q.prompt)  html+='<div class="q-prompt">'+q.prompt+'</div>';
-  if(q.big)     html+='<div class="q-big">'+q.big+'</div>';
-  if(q.promptHtml) html+=q.promptHtml;
+  const stim=[];
+  if(q.picture) stim.push('<div class="q-picture">'+q.picture+(q.pictureWord?'<div class="q-pw">'+q.pictureWord+'</div>':'')+'</div>');
+  if(q.big)     stim.push('<div class="q-big">'+q.big+'</div>');
+  if(q.promptHtml) stim.push(q.promptHtml);
   if(q.item){
-    html+='<div class="sort-item"><span class="si-emoji">'+q.item.emoji+'</span>'+q.item.t+'</div>';
+    stim.push('<div class="sort-item"><span class="si-emoji">'+q.item.emoji+'</span>'+q.item.t+'</div>');
   }
+  /* вопрос всегда виден текстом: если генератор дал только озвучку, показываем её */
+  const question = q.prompt || q.speak || R.game.title;
+  let html = qKicker('Вопрос '+(R.i+1)+' из '+R.qs.length, R.game.title);
+  html += '<div class="q-prompt">'+question+'</div>';
+  html += qStim(stim.join(''));
   if(q.bins){
     html+='<div class="bins">'+q.bins.map(b=>'<button class="bin" data-id="'+b.id+'"><span class="bin-emoji">'+b.emoji+'</span>'+b.label+'</button>').join('')+'</div>';
   }
-  if(q.options){
-    html+='<div class="options">'+q.options.map((o,i)=>
-      '<button class="opt '+(o.cls||'')+'" data-i="'+i+'">'+(o.html!==undefined?o.html:o.t)+
-      (o.label?'<span class="opt-label">'+o.label+'</span>':'')+'</button>').join('')+'</div>';
-  }
-  $('#stage').innerHTML=html;
-  feedback('Задание '+(R.i+1)+' из '+R.qs.length,'soft');
+  html += optionsHtml(q);
+  $('#stage').innerHTML='<div class="q-card">'+html+'</div>';
+  feedback('Выбери правильный вариант — ошибиться не страшно','soft');
   renderProgress();
-  if(q.memorize){ startMemorize(q); } else { speak(q.speak); }
+  if(q.memorize){ startMemorize(q); } else { speak(q.speak || question); }
 }
 
 $('#stage').addEventListener('click',e=>{
@@ -1066,16 +1115,18 @@ function nextWordQuestion(){
   if(R.i>=R.qs.length){ finishRound(); return; }
   const q=R.qs[R.i]; q._tried=false; q._hint=false;
   R.answerGot=0;
-  let html='';
-  if(q.picture) html+='<div class="q-picture">'+q.picture+'</div>';
-  if(q.prompt) html+='<div class="q-prompt">'+q.prompt+'</div>';
+  let html = qKicker('Слово '+(R.i+1)+' из '+R.qs.length, 'нажми кубики по порядку');
+  const stim=[];
+  if(q.picture) stim.push('<div class="q-picture">'+q.picture+'</div>');
+  if(q.prompt)  stim.push('<div class="q-prompt">'+q.prompt+'</div>');
+  html += qStim(stim.join(''));
   html+='<div class="answer-line" id="answer-line"></div>';
   html+='<div class="tiles">'+q.tiles.map((t,i)=>'<button class="tile" data-v="'+t+'" data-k="'+i+'">'+t+'</button>').join('')+'</div>';
-  $('#stage').innerHTML=html;
+  $('#stage').innerHTML='<div class="q-card">'+html+'</div>';
   renderAnswerLine();
-  feedback('Задание '+(R.i+1)+' из '+R.qs.length+' · нажми кубики по порядку','soft');
+  feedback('Кубики — это буквы слова. Нажимай их по порядку, слово соберётся само','soft');
   renderProgress();
-  speak(q.speak);
+  speak(q.speak || q.prompt);
 }
 function renderAnswerLine(){
   const q=R.qs[R.i], line=$('#answer-line'); if(!q||!line) return;
@@ -1127,10 +1178,11 @@ function startPairs(){
   const deck=shuffle(pickN(PAIRS_POOL,n).flatMap(e=>[e,e]));
   R.deck=deck; R.open=[]; R.matched=0; R.mistakes=0; R.total=n; R.lock=false;
   R.max=5;
-  $('#stage').innerHTML='<div class="q-prompt">Переворачивай карточки и находи одинаковые пары</div>'+
-    '<div class="pairs">'+deck.map((e,i)=>
-      '<div class="card" data-i="'+i+'"><div class="face back">❔</div><div class="face front">'+e+'</div></div>').join('')+'</div>';
-  feedback('Найди '+n+' пар. Ошибок не бойся!','soft');
+  $('#stage').innerHTML='<div class="q-card">'+qKicker('Игра на память', n+' пар')
+    +'<div class="q-prompt">Переворачивай карточки и находи одинаковые пары</div>'
+    +'<div class="pairs">'+deck.map((e,i)=>
+      '<div class="card" data-i="'+i+'"><div class="face back">❔</div><div class="face front">'+e+'</div></div>').join('')+'</div></div>';
+  feedback('Найди '+n+' пар. Ошибок не бойся — карточки просто переворачиваются обратно','soft');
   renderProgress();
   speak('Игра на память. Открывай карточки и находили одинаковые. Всего пар — '+n+'.');
   $('#stage').onclick=ev=>{
@@ -1169,11 +1221,11 @@ function renderAction(){
   R.i=R.results.length;
   if(R.i>=R.qs.length){ finishRound(); return; }
   const q=R.qs[R.i];
-  $('#stage').innerHTML=
-    '<div class="action-box"><span class="a-emoji">'+q.emoji+'</span><div class="a-text">'+q.text+'</div>'+
+  $('#stage').innerHTML='<div class="q-card">'+qKicker('Шаг '+(R.i+1)+' из '+R.qs.length, 'зарядка')
+    +'<div class="action-box"><span class="a-emoji">'+q.emoji+'</span><div class="a-text">'+q.text+'</div>'+
     '<div class="action-steps">'+q.sub+'</div></div>'+
-    '<div class="action-next"><button class="btn primary" id="act-next">Готово, дальше ▶</button></div>';
-  feedback('Шаг '+(R.i+1)+' из '+R.qs.length,'soft');
+    '<div class="action-next"><button class="btn primary" id="act-next">Готово, дальше ▶</button></div></div>';
+  feedback('Сделай это движение, потом нажми «Готово»','soft');
   renderProgress();
   speak(q.speak);
   $('#act-next').onclick=()=>{ R.results.push(1); R.stars=Math.min(5,R.results.length); sndStar(); renderProgress(); renderRoundStars(); renderAction(); };
@@ -1189,14 +1241,17 @@ function renderTrace(){
     : it.kind==='path'
     ? '<div class="q-prompt">〰️ '+it.title+'</div>'
     : '<div class="q-prompt">'+(it.kind==='write'?'✍️ Напиши сам: ':'✍️ Обведи по пунктиру: ')+'<b class="trace-head-letter">'+it.letter+'</b></div>';
-  $('#stage').innerHTML='<div class="trace-wrap">'+head+
+  $('#stage').innerHTML='<div class="q-card">'+qKicker(
+      (it.kind==='grid'?'Дорожка':(it.kind==='path'?'Узор':'Буква'))+' '+(R.idx+1)+' из '+R.items.length,
+      it.kind==='write'?'на память':'по пунктиру')+
+    '<div class="trace-wrap">'+head+
     '<canvas class="trace" id="trace-canvas" width="560" height="300"></canvas>'+
     '<div class="trace-tools">'+
       '<button class="btn small" id="trace-clear">🧽 Стереть</button>'+
       '<button class="btn primary small" id="trace-done">Готово ✓</button>'+
       '<span class="trace-hint">Веди пальчиком или мышкой по пунктиру, не отрываясь</span>'+
-    '</div></div>';
-  feedback((it.kind==='grid'?'Дорожка':(it.kind==='path'?'Узор':'Буква'))+' '+(R.idx+1)+' из '+R.items.length,'soft');
+    '</div></div></div>';
+  feedback(it.kind==='write'?'Напиши букву на память — обводить не надо':'Веди линию по пунктиру, потом «Готово»','soft');
   renderProgress();
   setupTrace(it);
   speak(it.speak);
@@ -1260,6 +1315,15 @@ function paintTraceBase(){
   ctx.setLineDash([7,7]); ctx.strokeStyle='#e3e9f2';
   ctx.beginPath(); ctx.moveTo(16,mid); ctx.lineTo(W-16,mid); ctx.stroke(); ctx.setLineDash([]);
   ctx.strokeStyle='#f3b6c2'; ctx.beginPath(); ctx.moveTo(marginX,18); ctx.lineTo(marginX,H-18); ctx.stroke();
+  /* для «напиши сам» показываем очень бледную букву-образец: ребёнок видит, куда писать */
+  if(T.it.kind==='write'){
+    ctx.save(); ctx.globalAlpha=.14; ctx.fillStyle='#6b6480';
+    ctx.textAlign='center'; ctx.textBaseline='alphabetic';
+    const size=(bottom-top)/0.72;
+    ctx.font='700 '+Math.floor(size)+'px "Segoe UI", Arial, sans-serif';
+    ctx.fillText(T.it.letter,(marginX+W)/2,bottom-2);
+    ctx.restore();
+  }
 }
 function drawGuide(){
   if(!T) return;
@@ -1279,7 +1343,8 @@ function drawGuideSoft(){
   if(!T) return;
   const {ctx,W,mask,it}=T;
   if(it.kind==='write'){
-    ctx.save(); ctx.globalAlpha=.18; ctx.fillStyle='#4b8ef1';
+    /* подсказка: образец становится заметнее, но всё равно прозрачнее написанного */
+    ctx.save(); ctx.globalAlpha=.42; ctx.fillStyle='#4b8ef1';
     const size=(T.bottom-T.top)/0.72;
     ctx.textAlign='center'; ctx.textBaseline='alphabetic';
     ctx.font='700 '+Math.floor(size)+'px "Segoe UI", Arial, sans-serif';
@@ -1335,7 +1400,7 @@ function gradeTrace(){
   } else if(val>=0.6){
     /* неполная, но старательная линия — тоже звезда и сердечко за старание */
     R.stars++; state.hearts=(state.hearts||0)+1; sndStar(); sparkleBurst(5); setMood('🥰');
-    feedback('Хорошо! Закрыто '+Math.round(cov*100)+'% '+what+'. Ведите линию чуть плотнее — и будет отлично.','soft');
+    feedback('Хорошо! Закрыто '+Math.round(cov*100)+'% '+what+'. Веди линию чуть плотнее — и будет отлично.','soft');
     speak('Неплохо! Давай ещё раз, старательно.');
   } else {
     tone(523,.16,'sine',.1,0); tone(659,.18,'sine',.09,.13); setMood('🙂');
@@ -1944,10 +2009,10 @@ GEN['pet.group']=function(){
   return function(){
     if(i>=bag.length) refill();
     const it=bag[i++];
-    return { speak:'Куда положить предмет: '+it.t+'? Круглое — в розовую корзинку, квадратное — в голубую.',
+    return { speak:'Куда положить предмет: '+it.t+'? Если он круглый, без уголков — в первую корзинку. Если у него 4 уголка — во вторую.',
       item:{t:it.t, cat:it.cat, emoji:it.emoji},
-      bins:[{id:'a',label:'Круглое',emoji:'🔴'},{id:'b',label:'Квадратное',emoji:'🟥'}],
-      hint:'У предмета «'+it.t+'» форма — '+(it.cat==='a'?'круглая':'квадратная')+'.' };
+      bins:[{id:'a',label:'Круглое · без уголков',emoji:'⭕'},{id:'b',label:'С углами · 4 уголка',emoji:'🟦'}],
+      hint:'У предмета «'+it.t+'» '+(it.cat==='a'?'форма круглая, уголков нет — первая корзинка':'форма квадратная или прямоугольная, 4 уголка — вторая корзинка')+'.' };
   };
 };
 GEN['pet.space']=function(){
@@ -1969,9 +2034,9 @@ GEN['pet.space']=function(){
       const anchorIdx = kind==='справа' ? rnd(r.length-1) : 1+rnd(r.length-1);
       const anchor=r[anchorIdx];
       answer = kind==='справа' ? r[anchorIdx+1] : r[anchorIdx-1];
-      /* объясняем, где «право» и «лево»: иначе ряд из 5 картинок читается по-разному */
-      prompt='Кто стоит '+kind+' от '+anchor+'? (Право и лево смотрим на экране: как когда мы сами стоим слева.)';
-      speak='Рассмотри ряд предметов. Кто стоит '+kind+' от '+anchor+'? Лево и право мы считаем на экране: вот самая левая картинка, а вот самая правая.';
+      /* объясняем, где «право» и «лево»: ряд на экране читают как стоящий перед нами */
+      prompt='Кто стоит '+kind+' от '+anchor+'? Право и лево смотрим на экране: самая левая картинка — слева.';
+      speak='Рассмотри ряд предметов. Кто стоит '+kind+' от '+anchor+'? Лево и право считаем на экране: вот самая левая картинка, вот самая правая.';
     }
     const opts=shuffle([answer].concat(pickN(r.filter(x=>x!==answer), 2)));
     return { promptHtml:rowHtml,
@@ -2011,11 +2076,14 @@ GEN['pet.neighbors']=function(){
     const cands=[before? n+1 : n-1, n+2, n-2, ans+2, ans-2].filter(v=>v>=1&&v<=max&&v!==ans);
     const uniq=[]; cands.forEach(v=>{ if(uniq.indexOf(v)<0) uniq.push(v); });
     const opts=shuffle([ans].concat(pickN(uniq,2)));
-    return { prompt:'Какое число живёт '+(before?'перед':'после')+' числа '+n+'?',
+    const words=(before?'до':'после')+' числа '+n;
+    const lo=Math.max(1,n-2), hi=Math.min(max,n+2);
+    const line=[]; for(let v=lo;v<=hi;v++) line.push(v===n?'('+n+')':v);
+    return { prompt:'Какое число живёт '+words+'?',
       promptHtml:'<div class="numline">'+(before?'<b>?</b> <span class="nn-arrow">→</span> <b>'+n+'</b>':'<b>'+n+'</b> <span class="nn-arrow">→</span> <b>?</b>')+'</div>',
-      speak:'Какое число живёт '+(before?'перед':'после')+' числа '+n+'?',
+      speak:'Какое число живёт '+words+'? '+n+(before?' минус 1':' плюс 1')+'.',
       options:opts.map(o=>({t:String(o),cls:'text'})), answer:opts.indexOf(ans),
-      hint:'Числовой ряд: '+(n-2)+', '+(n-1)+', '+n+', '+(n+1)+', '+(n+2) };
+      hint:'Ряд рядом с '+n+': '+line.join(', ')+'. Стрелка '+(before?'идёт назад — это число перед '+n:'идёт вперёд — это число после '+n)+'. Числа от '+lo+' до '+hi+'.' };
   };
 };
 /* вариант ответа из трёх разных чисел (без повторов) */
@@ -2055,7 +2123,7 @@ GEN['pet.diff']=function(){
       prompt: askMore? 'На сколько '+a+' больше, чем '+b+'?' : 'На сколько '+b+' меньше, чем '+a+'?',
       speak: askMore? 'На сколько '+a+' больше, чем '+b+'?' : 'На сколько '+b+' меньше, чем '+a+'?',
       options:opts.map(o=>({t:String(o),cls:'text'})), answer:opts.indexOf(ansNum),
-      hint:'Убери поровну: осталось '+diff+'.' };
+      hint:'Считаем по одному: '+b+' из '+a+' убрали поровну — осталось '+diff+'. Значит '+a+' больше на '+diff+'.' };
   };
 };
 GEN['pet.parts']=function(){
@@ -2095,9 +2163,9 @@ GEN['pet.table']=function(){
     return { promptHtml:'<div class="pet-table">'+cells.map((x,i)=>
         '<div class="pc'+(i===missing?' emptycell':'')+'">'+(i===missing?'❔':pSvg(x.shape,x.color,52))+'</div>').join('')+'</div>',
       prompt:'Какая фигура пропущена в волшебном квадрате?',
-      speak:'Рассмотри волшебный квадрат: сверху слева направо идут цвета, а по строчкам — формы. Какая фигура пропущена?',
+      speak:'Рассмотри волшебный квадрат: в каждой строчке все фигурки одной формы, а в каждой колонке — одного цвета. Какая фигурка пропущена?',
       options:opts.map(o=>({html:pSvg(o.shape,o.color,68),cls:'pic-opt'})), answer:opts.indexOf(answer),
-      hint:'Внизу нужна '+answer.color+' '+answer.shape+'.' };
+      hint:'Пустая клеточка — в нижней строчке справа. По строчкам форма одна: '+shapes[2]+'. По колонкам цвет один: '+colors[2]+'. Значит, пропущена '+colors[2]+' '+shapes[2]+'.' };
   };
 };
 GEN['pet.measure']=function(){
@@ -2142,8 +2210,13 @@ GEN['pet.dictation']=function(){ return function(){ return null; }; };
 GEN['abc.lastSound']=function(){
   const used={};
   return function(){
-    let it,tries=0; do{ it=pick(LAST_SOUND); tries++; }while(used[it.w]&&tries<30); used[it.w]=1;
-    const otherLetters=[]; LAST_SOUND.forEach(x=>{ if(x.l!==it.l && otherLetters.indexOf(x.l)<0) otherLetters.push(x.l); });
+    /* берём только слова, чья последняя буква уже пройдена в этом уровне сложности */
+    const L=LV().letters;
+    const pool=LAST_SOUND.filter(x=>L.indexOf(x.l)>=0);
+    let it,tries=0; do{ it=pick(pool.length?pool:LAST_SOUND); tries++; }while(used[it.w]&&tries<30); used[it.w]=1;
+    const otherLetters=[];
+    pool.forEach(x=>{ if(x.l!==it.l && otherLetters.indexOf(x.l)<0) otherLetters.push(x.l); });
+    LAST_SOUND.forEach(x=>{ if(otherLetters.length<LV().opts && x.l!==it.l && otherLetters.indexOf(x.l)<0) otherLetters.push(x.l); });
     const others=pickN(otherLetters, LV().opts-1);
     const opts=shuffle([it.l].concat(others));
     return { picture:it.e, pictureWord:cap(it.w), prompt:'Последняя буква в слове:',
@@ -2155,14 +2228,18 @@ GEN['abc.lastSound']=function(){
 GEN['abc.lookalike']=function(){
   const used={};
   return function(){
-    let it,tries=0; do{ it=pick(LOOKALIKE); tries++; }while(used[it.a+it.b]&&tries<30); used[it.a+it.b]=1;
+    /* обе буквы пары должны быть пройдены в текущем уровне */
+    const L=LV().letters;
+    const pool=LOOKALIKE.filter(p=>L.indexOf(p.a)>=0 && L.indexOf(p.b)>=0);
+    let it,tries=0; do{ it=pick(pool.length?pool:LOOKALIKE); tries++; }while(used[it.a+it.b]&&tries<30); used[it.a+it.b]=1;
     const flip=Math.random()<.5;
     const target=flip?it.b:it.a, twin=flip?it.a:it.b;
-    const opts=shuffle([target,twin]);
-    return { prompt:'Найди букву «'+target+'», она похожа на «'+twin+'», но это не она!',
+    /* показываем обе буквы строчными — так ребёнок узнаёт их так же, как в азбуке */
+    const opts=shuffle([target, twin].map(x=>x.toLowerCase()));
+    return { prompt:'Найди букву «'+target.toLowerCase()+'» — она похожа на «'+twin.toLowerCase()+'», но это не она!',
       speak:'Найди букву «'+target.toLowerCase()+'». Рядом есть очень похожая буква — будь внимательна.',
-      options:opts.map(o=>({t:o,cls:'big-letter'})), answer:opts.indexOf(target),
-      hint:'Буква «'+target+'» — вот эта.' };
+      options:opts.map(o=>({t:o,cls:'big-letter'})), answer:opts.indexOf(target.toLowerCase()),
+      hint:'Нужная буква «'+target.toLowerCase()+'» — вот эта, а «'+twin.toLowerCase()+'» — похожая, но не она.' };
   };
 };
 GEN['math.angles']=function(){
@@ -2178,8 +2255,8 @@ GEN['math.angles']=function(){
       prompt:'Сколько у фигуры «'+sh.n+'» углов?',
       speak:'Сколько у фигуры '+sh.n+' углов?',
       options:opts.map(o=>({t:String(o),cls:'text'})), answer:opts.indexOf(n),
-      hint: n===0?'У круга нет ни одного уголка — он круглый.':'Это '+sh.n+'. В нём ровно '+n+' '+
-            (n===1?'угол':(n<5?'угла':'углов'))+'.' };
+      hint: n===0?'У круга и у овала нет ни одного уголка — они округлые, края гладкие.':
+            ('Это '+sh.n+'. В нём ровно '+n+' '+(n===1?'угол':(n<5?'угла':'углов'))+'. Считай уголки по краю фигуры.') };
   };
 };
 GEN['read.letterPos']=function(){
@@ -2187,12 +2264,14 @@ GEN['read.letterPos']=function(){
   return function(){
     let it,tries=0; do{ it=pick(LETTER_POS); tries++; }while(used[it.w+it.l]&&tries<30); used[it.w+it.l]=1;
     const opts=shuffle([it.pos].concat(pickN([1,2,3,4,5].filter(x=>x!==it.pos&&x<=it.w.length),2)));
-    const wordHtml='<span class="word-cells">'+it.w.split('').map((c,i)=>'<b>'+((i+1===it.pos)?'<u>'+c+'</u>':c)+'</b>').join('')+'</span>';
-    return { promptHtml:wordHtml,
-      prompt:'На котором месте стоит буква «'+it.l+'»?',
+    /* буквы в клеточках с номерами: ребёнок считает вслух 1, 2, 3… и сразу видит счёт */
+    const cells=it.w.split('').map((c,i)=>'<b class="wc"><span class="wc-num">'+(i+1)+'</span>'+c+'</b>').join('');
+    return { promptHtml:'<div class="word-cells">'+cells+'</div>',
+      prompt:'На котором месте стоит буква «'+it.l+'»? Считай буквы слева направо.',
       speak:'Прочитай слово '+it.w+'. На котором месте стоит буква '+it.l.toLowerCase()+'?',
       options:opts.map(o=>({t:String(o),cls:'text'})), answer:opts.indexOf(it.pos),
-      hint:'Считаем слева: '+it.w.split('').map((c,i)=>(i+1)+') '+c).join('  ') };
+      hint:'Считаем слева направо: '+it.w.split('').map((c,i)=>(i+1)+') '+c).join(', ')+
+           ' — буква «'+it.l.toLowerCase()+'» стоит на месте '+it.pos+'.' };
   };
 };
 GEN['world.jobs']=function(){
@@ -2210,16 +2289,19 @@ GEN['world.transport']=function(){
   const refill=()=>{
     const a=shuffle(TRANSPORT_GROUND).slice(0,3).map(x=>({t:x.t, emoji:x.e, cat:'a'}));
     const b=shuffle(TRANSPORT_AIR).slice(0,3).map(x=>({t:x.t, emoji:x.e, cat:'b'}));
-    bag=shuffle(a.concat(b)); i=0;
+    const c=shuffle(TRANSPORT_WATER).slice(0,3).map(x=>({t:x.t, emoji:x.e, cat:'c'}));
+    bag=shuffle(a.concat(b).concat(c)); i=0;
   };
   refill();
+  const where=cat => cat==='a'?'ездит по земле':(cat==='b'?'летает по воздуху':'плывёт по воде');
   return function(){
     if(i>=bag.length) refill();
     const it=bag[i++];
-    return { speak:'Куда ездит транспорт: '+it.t+'? По земле — в одну корзинку, по воздуху — в другую.',
+    return { speak:'Где ездит '+it.t+'? По земле, по воздуху или по воде — нажми на нужную корзинку.',
+      prompt:'Где ездит этот транспорт?',
       item:{t:it.t, cat:it.cat, emoji:it.emoji},
-      bins:[{id:'a',label:'Едет по земле',emoji:'🛣️'},{id:'b',label:'Летает по воздуху',emoji:'🌤️'}],
-      hint:cap(it.t)+' '+(it.cat==='a'?'ездит по земле':'летает по воздуху')+'.' };
+      bins:[{id:'a',label:'По земле',emoji:'🛣️'},{id:'b',label:'По воздуху',emoji:'🌤️'},{id:'c',label:'По воде',emoji:'🌊'}],
+      hint:cap(it.t)+' '+where(it.cat)+'.' };
   };
 };
 GEN['logic.countShapes']=function(){
@@ -2481,7 +2563,7 @@ GEN['book.attr']=function(){
       const cat=Math.random()<.5?'a':'b';
       const col=(cat==='a')?c1:c2, sh=pick(P_SHAPES);
       return { prompt:'Клади в мешок так, чтобы в нём всё было ОДНОГО ЦВЕТА',
-        speak:'Разложи фигурки по мешкам так, чтобы в мешке всё было одного цвета. В какой мешок положить '+sh+'?',
+        speak:'Разложи фигурки по мешкам так, чтобы в мешке всё было одного цвета. В какой мешок положить '+col+' '+sh+'?',
         item:{cat:cat, t:col+' '+sh, emoji:pSvg(sh,col,66)}, bins:bins,
         hint:'Смотри на цвет, а не на форму: фигурка '+col+' '+sh+' — в мешок «'+bins[cat==='a'?0:1].label+'».' };
     }
@@ -2627,8 +2709,8 @@ GEN['book.inside']=function(){
       speak:'Посмотри на картинку: тут '+sc.name+'. Большая розовая линия — это граница, как заборчик. '+cap(it.t)+' стоит внутри этой линии или снаружи неё?',
       options:[{t:'Внутри линии', cls:'text'},{t:'Снаружи линии', cls:'text'}],
       answer:(tgt.in?0:1),
-      hint: it.in ? 'Розовая линия обнимает «'+it.t+'» — он внутри неё, за линией никто не стоит.'
-                  : '«'+it.t+'» стоит за розовой линией — значит, он снаружи, вне границы.' };
+      hint: it.in ? 'Розовая линия обнимает «'+it.t+'» — он внутри овала, за линией.'
+                  : '«'+it.t+'» стоит за розовой линией — он снаружи, вне овала.' };
   };
 };
 
@@ -2646,13 +2728,15 @@ GEN['book.line']=function(){
     const os=shuffle(names.filter(x=>x!==nm).concat(nm)).slice(0,3);
     if(!os.some(o=>o===nm)) os[2]=nm;
     const shuffled=shuffle(os);
+    /* винительный падеж: «найди прямую», а не «найди на прямая» */
+    const ACC={'прямая':'прямую','отрезок':'отрезок','луч':'луч','кривая':'кривую','ломаная':'ломаную'};
     if(Math.random()<.5){
       return { promptHtml:'<div class="pet-row">'+bLineSvg(nm,250)+'</div>',
         prompt:'Как называется эта линия?', speak:'Как называется эта линия?',
         options:shuffled.map(o=>({t:o,cls:'text'})), answer:shuffled.indexOf(nm),
         hint:nm+': '+B_LINE_HINT[nm] };
     }
-    return { prompt:'Найди линию: '+nm, speak:'Найди и нажми на '+nm+'.',
+    return { prompt:'Найди '+ACC[nm]+' — нажми на эту линию', speak:'Найди '+ACC[nm]+' — нажми на эту линию.',
       options:shuffled.map(o=>({html:bLineSvg(o,190), cls:'pic-opt line-opt'})), answer:shuffled.indexOf(nm),
       hint:nm+': '+B_LINE_HINT[nm] };
   };
@@ -2694,7 +2778,10 @@ GEN['book.angle']=function(){
       speak: what ? 'Посмотри на картинку: '+what+'. Какой там нарисован угол: прямой, острый или тупой?'
                   : 'Бывает прямой угол — как уголок тетради, острый — меньше него, тупой — больше. Какой это угол?',
       options:os.map(o=>({t:o,cls:'text'})), answer:os.indexOf(nm),
-      hint:B_ANGLE_HINT };
+      hint:'Этот угол — '+nm+' '+((what?('в «'+what+'»'):''))+': '+
+           (nm==='прямой' ? 'он квадратный, как уголок тетради — стороны идут ровно вниз и вправо.'
+            : nm==='острый' ? 'он меньше прямого, стороны раскрыты узко.'
+            : 'он больше прямого, стороны раскрыты широко.')+' сверь с уголком тетради.' };
   };
 };
 
@@ -2706,9 +2793,9 @@ GEN['book.pairs']=function(){
     const row='<div class="q-count pairs-row">'+Array.from({length:k},()=>'<span class="pairbox">'+it.e+it.e+'</span>').join('')+'</div>';
     const os=bPairsOpts(k);
     return { promptHtml:row, prompt:'Сколько тут пар?',
-      speak:'Пара — это двое одинаковых: два носка, две варежки. Посчитай, сколько получилось пар.',
+      speak:'Пара — это два одинаковых предмета рядом: '+it.one+' и '+it.one+' — это одна пара. Посчитай, сколько получилось пар.',
       options:os.map(o=>({t:String(o),cls:'text'})), answer:os.indexOf(k),
-      hint:'Соедини по двое: '+Array.from({length:k},(_,i)=>i+1).join(', ')+'. Всего пар — '+k+'.' };
+      hint:'Соединяем по двое: '+Array.from({length:k},(_,i)=>i+1).join(', ')+'. Всего пар — '+k+'.' };
   };
 };
 
@@ -2735,7 +2822,7 @@ GEN['book.gaps']=function(){
     if(uniq.length<2) bGapsAlts(good, mx).forEach(t2=>{ if(uniq.indexOf(t2)<0) uniq.push(t2); });
     const os=shuffle([txt].concat(uniq.slice(0,2)));
     return { promptHtml:row, prompt: cnt>1?'Какие цифры спрятались?':'Какая цифра спряталась?',
-      speak:'Числа идут по порядку, но часть закрыта. Скажи, '+(cnt>1?'какие цифры':'какая цифра')+' спряталось.',
+      speak:'Числа идут по порядку, но часть закрыта. Скажи, '+(cnt>1?'какие цифры спрятались':'какая цифра спряталась')+'.',
       options:os.map(o=>({t:o,cls: o.length>2?'long':'big-letter'})), answer:os.indexOf(txt),
       hint:'Считаем по порядку: '+seq.map(v=>v||'?').join(', ')+'. Спряталось: '+txt+'.' };
   };

@@ -277,7 +277,8 @@ GEN['ig.arrows']=function(){
     const answer=items[targetIdx];
     const opts=shuffle([answer].concat(pickN(items.filter(x=>x!==answer),2)));
     const sayWords=words.map((wd,k)=>(k?'':'по стрелкам: ')+wd+' '+ARW[wd]).join(', ');
-    return { promptHtml:igGrid(ROWS,COLS,items,path,{stepIdx:askStep?targetIdx:null}),
+    /* зелёный кружок вокруг нужной клетки убран: он выдавал ответ до ответа ребёнка */
+    return { promptHtml:igGrid(ROWS,COLS,items,path,{}),
       prompt: askStep ? 'На какой картинке Кира была на 3-м шаге?'
                       : 'На какой картинке Кира окажется в конце пути?',
       speak:'Клетки — как улицы, а стрелки показывают путь ('+sayWords+'). '+
@@ -496,12 +497,13 @@ GEN['ig.train']=function(){
     const side=(Math.random()<.5)?'l':'r';
     const num=(side==='l')?(1+rnd(2)):(4+rnd(2));
     const col=(side==='l')?cL:cR;
-    return { prompt:'Правило: слева и справа от середины',
+    /* сам вагончик показываем серым: если красить его в цвет корзинки, ответ виден сразу */
+    return { prompt:'Куда положить вагончик номер '+num+'?',
       promptHtml:igTrainSvg([cL[1],cL[1],'#ffffff',cR[1],cR[1]], num-1),
-      speak:'Паровозик слева. Вагоны, которые левее середины, красим в '+cL[0]+' цвет, а вагоны правее середины — в '+cR[0]+'. А вагончик посередине остаётся белым. Вагончик номер '+num+' — куда его положить?',
-      item:{cat:side, t:'вагончик номер '+num, emoji:igWagonSvg(col[1],num,66)},
+      speak:'Паровозик слева. Вагоны левее середины мы красим в '+cL[0]+' цвет, а правее середины — в '+cR[0]+' цвет. Вагончик посередине остаётся белым. Вагончик номер '+num+' — в какую корзинку его положить?',
+      item:{cat:side, t:'вагончик номер '+num, emoji:igWagonSvg('#cfd3dc',num,66)},
       bins:bins,
-      hint:'Считаем вагоны слева направо: 1, 2, 3, 4, 5. Середина — вагон 3. Вагон '+num+' стоит '+(num<3?'левее середины':'правее середины')+', значит он '+col[0]+'.' };
+      hint:'Считаем вагоны слева направо: 1, 2, 3, 4, 5. Середина — вагон 3. Вагон '+num+' стоит '+(num<3?'левее середины':'правее середины')+', поэтому он '+col[0]+'.' };
   };
 };
 
@@ -567,7 +569,9 @@ GEN['ig.scene']=function(){
     const big=(ca>cb)?A:B, small=(ca>cb)?B:A;
     const nBig=Math.max(ca,cb), nSmall=Math.min(ca,cb), d=nBig-nSmall;
     if(Math.random()<.5){
-      const opts=shuffle([big.t, small.t, sc.its[pair[0]===0?2:0].t].filter((v,i,arr)=>arr.indexOf(v)===i));
+      /* третий вариант — вид, который НЕ участвует в паре: тогда вариантов всегда три разных */
+      const third=[0,1,2].filter(i=>i!==pair[0] && i!==pair[1])[0];
+      const opts=shuffle([big.t, small.t, sc.its[third].t]);
       return { promptHtml:html, prompt:'Кого больше: '+igPlOf(big.t)+' или '+igPlOf(small.t)+'?',
         speak:'Посчитай, сколько '+igGenOf(big.t)+', а сколько '+igGenOf(small.t)+'. Кого больше?',
         options:opts.map(o=>({t:cap(igPlOf(o)),cls:'long'})), answer:opts.indexOf(big.t),

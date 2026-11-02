@@ -8,12 +8,12 @@
   --fs:1;
 
   /* акценты */
-  --pink:#ef4f8b; --pink-2:#ff77aa; --pink-3:#f7bdd4; --lilac:#9b6fd6;
+  --pink:#ef4f8b; --pink-2:#ff77aa; --pink-3:#f7bdd4; --lilac:#6f4bb0;
   --gold:#e9a72a; --mint:#2fa87c; --sky:#3f87e0; --rose:#e0475f; --orange:#f0783c;
 
   /* поверхности и текст */
   --bg:#fff7fb; --bg-2:#ffeff6; --card:#ffffff; --card-2:#fff9fc; --card-3:#fdf2f8;
-  --line:#e9d6e5; --line-2:#f4e5ee; --ink:#302639; --muted:#7d6c86;
+  --line:#e9d6e5; --line-2:#f4e5ee; --ink:#302639; --muted:#75637e;
 
   /* служебные состояния */
   --ok-bg:#e9f8f1; --ok-line:#bfe6cf; --bad-bg:#fff1f4; --bad-line:#f0b9c6;
@@ -31,6 +31,9 @@
   --grad-gold:linear-gradient(120deg,#ffcf6b,#f0893c);
   --ring:rgba(239,79,139,.22);
   --scrim:rgba(60,26,46,.5);
+
+  /* «бумажные» цвета картинок в играх: в тёмной теме они меняются на ночные */
+  --svg-fill:#fff0f6; --svg-fill-2:#ffe1ec; --svg-fill-3:#fff6fa; --svg-line:#ffd0e0; --svg-ink:#7a3a52;
 }
 html[data-theme=dark]{
   --pink:#ff79ab; --pink-2:#ff98c0; --pink-3:#c86b93; --lilac:#b78ee8;
@@ -50,6 +53,8 @@ html[data-theme=dark]{
   --grad-gold:linear-gradient(120deg,#f4c462,#d4762f);
   --ring:rgba(255,121,171,.28);
   --scrim:rgba(8,6,18,.66);
+
+  --svg-fill:#2f2849; --svg-fill-2:#3b3159; --svg-fill-3:#332c4e; --svg-line:#6b568c; --svg-ink:#f3e6f5;
 }
 
 *{box-sizing:border-box}
@@ -275,10 +280,36 @@ h3{font-size:1.22rem; margin:20px 0 10px}
 
 #stage{background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:20px;
   min-height:340px; box-shadow:var(--shadow); animation:fade .25s ease}
+/* рамка задания: сверху подписка «Вопрос 3 из 5», затем вопрос, картинка-стимул и варианты */
+.q-card{max-width:920px; margin:0 auto}
+.q-kicker{display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:0 0 12px}
+.q-kicker .kq{font-size:.76rem; font-weight:800; letter-spacing:.5px; text-transform:uppercase;
+  padding:.34rem .72rem; border-radius:var(--radius-pill); background:var(--grad-pink); color:#fff;
+  box-shadow:0 4px 10px var(--ring)}
+.q-kicker .kq-soft{background:var(--bg-2); color:var(--muted); border:1px solid var(--line); box-shadow:none}
+.q-stim{background:var(--bg-2); border:1.5px dashed var(--pink-3); border-radius:20px; padding:14px 16px;
+  margin:0 0 16px; display:flex; flex-direction:column; align-items:center; gap:10px}
+.q-stim .q-prompt{margin:0}
+.q-stim .q-picture,.q-stim .q-big{margin:0}
+.q-stim .pet-row,.q-stim .cmp,.q-stim .op-line,.q-stim .op-emoji,.q-stim .q-count,
+.q-stim .numline,.q-stim .bond,.q-stim .shape-show,.q-stim .ruler,.q-stim .pet-table,
+.q-stim .ig-scene,.q-stim .ig-expr,.q-stim .ig-days,.q-stim .ig-coinrow,.q-stim .ig-rib-note{margin:0}
+.q-stim .ig-scene,.q-stim .ig-rib-note,.q-stim .ig-day{background:var(--card)}
+.q-stim .ig-scene-row{border-top-color:var(--line)}
 .q-prompt{font-size:1.5rem; font-weight:700; margin:0 0 14px; line-height:1.35}
 .q-big{font-size:3.4rem; text-align:center; margin:8px 0 18px; line-height:1.25; letter-spacing:6px}
 .q-picture{font-size:5.4rem; text-align:center; margin:4px 0 12px}
 .q-pw{font-size:1.2rem; color:var(--muted); font-weight:700; margin-top:4px; text-align:center}
+
+/* Картинки игр рисуются «на бумаге» (#fff0f6 и подобные). В тёмной теме эти
+   светлые заливки и светлые линии меняются на ночные, чтобы рисунки не пропадали. */
+#stage svg [fill="#fff0f6"], #stage svg [fill="#fff7fb"], #stage svg [fill="#fff6fa"]{ fill:var(--svg-fill) }
+#stage svg [fill="#fff3d6"]{ fill:var(--svg-fill-3) }
+#stage svg [fill="#ffe1ec"]{ fill:var(--svg-fill-2) }
+#stage svg [stroke="#ffd0e0"], #stage svg [stroke="#ffd7e6"], #stage svg [stroke="#f2c0d2"]{ stroke:var(--svg-line) }
+#stage svg [fill="#7a3a52"], #stage svg [fill="#b5527d"], #stage svg [fill="#3a2450"]{ fill:var(--svg-ink) }
+#stage svg [stroke="#7a3a52"]{ stroke:var(--svg-line) }
+html[data-theme=dark] .pet-table .pc{background:var(--card-2)}
 
 .options{display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:12px; margin-top:12px}
 .opt{
@@ -287,19 +318,26 @@ h3{font-size:1.22rem; margin:20px 0 10px}
   align-items:center; justify-content:center; gap:6px; transition:.14s; color:var(--ink);
 }
 .opt:hover{border-color:var(--pink); transform:translateY(-3px) scale(1.02); box-shadow:0 10px 20px var(--ring)}
+.opt:active{transform:translateY(0) scale(.98)}
+.opt .opt-tap{font-size:.78rem; letter-spacing:.6px; text-transform:uppercase; color:var(--muted);
+  opacity:0; transition:.14s}
+.opt:hover .opt-tap,.opt:focus-visible .opt-tap{opacity:.8}
+@media (hover:none){ .opt .opt-tap{display:none} }
 .opt.pending{opacity:.55; cursor:progress}
 .opt .opt-label{font-size:.9rem; color:var(--muted); font-weight:500}
 .opt.big-letter{font-size:3.2rem; font-weight:800}
 .opt.sign{font-size:2.5rem; font-weight:800; min-width:112px}
-.opt.text{font-size:1.4rem; font-weight:700}
+.opt.text{font-size:1.4rem; font-weight:700; min-height:4.6rem}
 .opt.emoji-opt{font-size:2.6rem}
 .opt.emoji-opt.big2{font-size:3.8rem}
 .opt.word-opt{font-size:1.3rem; font-weight:700; letter-spacing:3px}
-.opt.long{font-size:1rem; font-weight:600; line-height:1.35; text-align:center}
+.opt.long{font-size:1rem; font-weight:600; line-height:1.35; text-align:center; min-height:4.2rem}
 .opt.pic-opt{padding:10px}
 .opt svg{max-width:100%}
 .opt.right{border-color:var(--mint); background:var(--ok-bg); animation:pop .35s ease}
+.opt.right::after{content:'✓ верно'; font-size:.72rem; font-weight:800; letter-spacing:.4px; color:var(--mint)}
 .opt.wrong{border-color:var(--rose); background:var(--bad-bg); animation:shake .35s ease}
+.opt.wrong::after{content:'попробуй ещё'; font-size:.72rem; font-weight:800; color:var(--rose)}
 .opt.glow{border-color:var(--gold); box-shadow:0 0 0 4px var(--gold-bg); animation:glow 1s ease infinite alternate}
 .opt.dim{opacity:.4}
 
@@ -316,7 +354,7 @@ h3{font-size:1.22rem; margin:20px 0 10px}
 .answer-line .cell.empty{color:var(--pink-3)}
 .shake-it{animation:shake .4s ease}
 
-.bins{display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:14px}
+.bins{display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:14px; margin-top:14px}
 .bin{border:2px dashed var(--pink-3); border-radius:20px; padding:16px; cursor:pointer; background:var(--card-2);
   display:flex; flex-direction:column; align-items:center; gap:8px; font-size:1.15rem; font-weight:700;
   min-height:150px; transition:.14s; color:var(--ink)}
@@ -583,6 +621,9 @@ td.grade.g3{color:var(--sky)}
 .game-card.pet-card{border-color:var(--pink-3)}
 .game-card .g-pet{display:inline-block; font-size:.72rem; font-weight:800; letter-spacing:.3px; color:var(--lilac);
   background:var(--bg-2); border:1px solid var(--pink-3); padding:3px 9px; border-radius:var(--radius-pill); margin:0 0 7px}
+.game-card .g-kind{display:inline-block; font-size:.72rem; font-weight:700; letter-spacing:.2px; color:var(--muted);
+  background:var(--card-3); border:1px solid var(--line); padding:3px 9px; border-radius:var(--radius-pill); margin:0 0 7px}
+.game-card .g-desc{font-size:.84rem; color:var(--muted); display:block; margin:4px 0 8px; line-height:1.45}
 @media (max-width:560px){ .hub-filter .hf-label{width:100%; margin-bottom:4px} }
 .pet-note{margin:0 0 12px; padding:10px 13px; border-left:4px solid var(--pink); background:var(--bg-2);
   border-radius:0 14px 14px 0; color:var(--ink); font-size:.88rem}

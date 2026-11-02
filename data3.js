@@ -64,9 +64,9 @@ function bLineSvg(kind, s){
   if(kind==='прямая'){ p='<line x1="8" y1="45" x2="232" y2="45" stroke="'+col+'" stroke-width="'+sw+'"/>'+
       '<polygon points="232,45 216,38 216,52" fill="'+col+'"/><polygon points="8,45 24,38 24,52" fill="'+col+'"/>'; }
   else if(kind==='отрезок'){ p='<line x1="40" y1="45" x2="200" y2="45" stroke="'+col+'" stroke-width="'+sw+'"/>'+
-      '<circle cx="40" cy="45" r="7" fill="#7a3a52"/><circle cx="200" cy="45" r="7" fill="#7a3a52"/>'; }
+      '<circle cx="40" cy="45" r="7" fill="#ffb703" stroke="#8a5a00" stroke-width="2"/><circle cx="200" cy="45" r="7" fill="#ffb703" stroke="#8a5a00" stroke-width="2"/>'; }
   else if(kind==='луч'){ p='<line x1="40" y1="45" x2="226" y2="45" stroke="'+col+'" stroke-width="'+sw+'"/>'+
-      '<circle cx="40" cy="45" r="7" fill="#7a3a52"/><polygon points="226,45 210,38 210,52" fill="'+col+'"/>'; }
+      '<circle cx="40" cy="45" r="7" fill="#ffb703" stroke="#8a5a00" stroke-width="2"/><polygon points="226,45 210,38 210,52" fill="'+col+'"/>'; }
   else if(kind==='кривая'){ p='<path d="M12,60 C60,10 110,84 160,34 S210,60 226,42" fill="none" stroke="'+col+'" stroke-width="'+sw+'"/>'; }
   else { p='<polyline points="14,66 70,26 126,66 182,26 226,60" fill="none" stroke="'+col+'" stroke-width="'+sw+'" stroke-linejoin="round"/>'; }
   return '<svg viewBox="0 0 240 90" width="'+w+'" height="'+Math.round(h*(w/230))+'">'+p+extra+'</svg>';
@@ -81,7 +81,7 @@ function bClosedSvg(yes, s){
   const open='M26,116 C26,44 92,12 152,28 C204,42 212,100 172,124';
   const p = yes ? '<path d="'+closed+'" fill="none" stroke="'+col+'" stroke-width="5"/>'
                 : '<path d="'+open+'" fill="none" stroke="'+col+'" stroke-width="5"/>'+
-                  '<circle cx="26" cy="116" r="7" fill="#7a3a52"/><circle cx="172" cy="124" r="7" fill="#7a3a52"/>';
+                  '<circle cx="26" cy="116" r="7" fill="#ffb703" stroke="#8a5a00" stroke-width="2"/><circle cx="172" cy="124" r="7" fill="#ffb703" stroke="#8a5a00" stroke-width="2"/>';
   return '<svg viewBox="0 0 220 150" width="'+w+'" height="'+Math.round(w*150/220)+'">'+p+'</svg>';
 }
 
@@ -90,7 +90,8 @@ function bClosedSvg(yes, s){
    с правильным ответом: острый 35–55°, прямой ровно 90°, тупой 118–150°.
    Углы «из жизни» тоже рисуем сами (уголок тетради, ножницы, крыша домика). */
 function bAngleRays(vx, vy, s1, s2, L, squareMark){
-  const col='#ff4d8d', dark='#7a3a52', rad=d=>d*Math.PI/180;
+  /* дуга и отметка прямого угла видны в обеих темах: цвет не слишком тёмный и не слишком светлый */
+  const col='#ff4d8d', dark='#d9557f', rad=d=>d*Math.PI/180;
   const x1=vx+L*Math.cos(rad(s1)), y1=vy+L*Math.sin(rad(s1));
   const x2=vx+L*Math.cos(rad(s2)), y2=vy+L*Math.sin(rad(s2));
   let out='<path d="M'+x1.toFixed(1)+','+y1.toFixed(1)+' L'+vx+','+vy+' L'+x2.toFixed(1)+','+y2.toFixed(1)+
@@ -132,11 +133,12 @@ const B_ANGLE_SCENES = [
       const r=bAngleRays(34, 26, 0, 90, 104, true);
       return {body:body, rays:r.svg}; }},
   {kind:'острый', t:'раскрытые ножницы', svg:function(){
-      const body='<circle cx="86" cy="146" r="11" fill="none" stroke="#7a3a52" stroke-width="4"/>'+
-                 '<circle cx="138" cy="146" r="11" fill="none" stroke="#7a3a52" stroke-width="4"/>'+
-                 '<line x1="94" y1="137" x2="112" y2="116" stroke="#7a3a52" stroke-width="4"/>'+
-                 '<line x1="130" y1="137" x2="112" y2="116" stroke="#7a3a52" stroke-width="4"/>';
-      const r=bAngleRays(112, 116, -68, -26, 96, false);
+      /* лезвия расходятся симметрично вверх: угол между ними ровно тот, что спрашиваем */
+      const body='<circle cx="96" cy="150" r="11" fill="none" stroke="#d9557f" stroke-width="4"/>'+
+                 '<circle cx="128" cy="150" r="11" fill="none" stroke="#d9557f" stroke-width="4"/>'+
+                 '<line x1="102" y1="141" x2="112" y2="118" stroke="#d9557f" stroke-width="4"/>'+
+                 '<line x1="122" y1="141" x2="112" y2="118" stroke="#d9557f" stroke-width="4"/>';
+      const r=bAngleRays(112, 116, -115, -65, 96, false);
       return {body:body, rays:r.svg}; }},
   {kind:'тупой', t:'крыша домика', svg:function(){
       const body='<rect x="52" y="98" width="116" height="54" rx="6" fill="#fff0f6" stroke="#ffd0e0" stroke-width="3"/>'+
@@ -146,12 +148,13 @@ const B_ANGLE_SCENES = [
 ];
 
 /* ---------- пары: один — много, пара (зан. 15, 17–18) ---------- */
+/* ---------- пары: один — много, пара (зан. 15, 17–18) ----------
+   В игре предмет рисуется дважды (это пара), поэтому эмодзи должен показывать
+   ОДИН предмет: 🧦 и 👀 показывают сразу две вещи и путают счёт. */
 const B_PAIRS = [
-  {e:'🧦', one:'носок',  many:'носочки'},   {e:'🧤', one:'варежка', many:'варежки'},
-  {e:'👟', one:'башмачок',many:'башмачки'}, {e:'👡', one:'босоножка',many:'босоножки'},
-  {e:'🥢', one:'палочка', many:'палочки'},  {e:'👂', one:'ушко',    many:'ушки'},
-  {e:'👐', one:'ручка',   many:'ручки'},    {e:'👀', one:'глазик',  many:'глазки'},
-  {e:'👓', one:'линза',   many:'линзы'},    {e:'👖', one:'штанина', many:'штанины'}
+  {e:'👟', one:'башмачок', many:'башмачки'}, {e:'👡', one:'босоножка', many:'босоножки'},
+  {e:'👂', one:'ушко',     many:'ушки'},     {e:'🥄', one:'ложка',    many:'ложки'},
+  {e:'✏️', one:'карандашик', many:'карандашики'}
 ];
 
 /* ---------- цифры: числовой ряд с пропусками (зан. 16–28) ---------- */
